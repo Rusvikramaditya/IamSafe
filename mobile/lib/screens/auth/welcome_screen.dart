@@ -1,10 +1,58 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 import 'login_screen.dart';
 import 'signup_screen.dart';
+import 'setup_wizard_screen.dart';
 
-class WelcomeScreen extends StatelessWidget {
+class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
+
+  @override
+  State<WelcomeScreen> createState() => _WelcomeScreenState();
+}
+
+class _WelcomeScreenState extends State<WelcomeScreen> {
+  bool _googleLoading = false;
+
+  Future<void> _handleGoogleSignIn() async {
+    setState(() => _googleLoading = true);
+    try {
+      final authService = Provider.of<AuthService>(context, listen: false);
+      final credential = await authService.signInWithGoogle();
+      if (credential == null) {
+        setState(() => _googleLoading = false);
+        return; // user cancelled
+      }
+
+      final isNewUser = credential.additionalUserInfo?.isNewUser ?? false;
+      if (isNewUser && mounted) {
+        // New user — send to setup wizard
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => SetupWizardScreen(
+              email: credential.user?.email ?? '',
+              fullName: credential.user?.displayName,
+            ),
+          ),
+        );
+      }
+      // Existing user — AuthGate will route automatically
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Google sign-in failed. Please try again.', style: TextStyle(fontSize: 18)),
+            backgroundColor: AppTheme.alertRed,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _googleLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -111,6 +159,58 @@ class WelcomeScreen extends StatelessWidget {
                   child: const Text(
                     'Create Account',
                     style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Divider
+              Row(
+                children: [
+                  const Expanded(child: Divider()),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      'or',
+                      style: TextStyle(fontSize: 18, color: AppTheme.textSecondary),
+                    ),
+                  ),
+                  const Expanded(child: Divider()),
+                ],
+              ),
+
+              const SizedBox(height: 24),
+
+              // Google Sign-In button
+              SizedBox(
+                width: double.infinity,
+                height: 60,
+                child: OutlinedButton.icon(
+                  onPressed: _googleLoading ? null : _handleGoogleSignIn,
+                  icon: _googleLoading
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Image.network(
+                          'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
+                          width: 24,
+                          height: 24,
+                          errorBuilder: (_, __, ___) =>
+                              const Icon(Icons.g_mobiledata, size: 28),
+                        ),
+                  label: const Text(
+                    'Continue with Google',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w500),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.textPrimary,
+                    side: BorderSide(color: Colors.grey[400]!),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                   ),
                 ),
               ),

@@ -7,8 +7,9 @@ import '../senior/home_screen.dart';
 
 class SetupWizardScreen extends StatefulWidget {
   final String email;
+  final String? fullName;
 
-  const SetupWizardScreen({super.key, required this.email});
+  const SetupWizardScreen({super.key, required this.email, this.fullName});
 
   @override
   State<SetupWizardScreen> createState() => _SetupWizardScreenState();
@@ -34,6 +35,14 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
   final _contactNameController = TextEditingController();
   final _contactEmailController = TextEditingController();
   final _contactRelationController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.fullName != null && widget.fullName!.isNotEmpty) {
+      _nameController.text = widget.fullName!;
+    }
+  }
 
   @override
   void dispose() {
