@@ -5,6 +5,7 @@ import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 import '../auth/welcome_screen.dart';
 import 'check_in_detail_screen.dart';
+import 'settings_screen.dart';
 
 class CaregiverDashboardScreen extends StatefulWidget {
   const CaregiverDashboardScreen({super.key});
@@ -197,16 +198,13 @@ class _CaregiverDashboardScreenState extends State<CaregiverDashboardScreen> {
           ],
         ),
         IconButton(
-          icon: const Icon(Icons.logout, size: 28),
-          tooltip: 'Sign Out',
-          onPressed: () async {
-            await Provider.of<AuthService>(context, listen: false).signOut();
-            if (context.mounted) {
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (_) => const WelcomeScreen()),
-                (route) => false,
-              );
-            }
+          icon: const Icon(Icons.settings, size: 28),
+          tooltip: 'Settings',
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const CaregiverSettingsScreen()),
+            );
           },
         ),
       ],
