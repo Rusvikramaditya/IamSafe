@@ -1,0 +1,47 @@
+# Local tools
+.claude-guard/
+session-log.md
+merge_claude_md.py
+claude-guard.py
+contextos/
+
+# Dependencies
+node_modules/
+
+# Build outputs
+backend/dist/
+mobile/build/
+mobile/.dart_tool/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Secrets
+.env
+.env.*
+*.keystore
+*.jks
+service-account.json
+google-services.json
+GoogleService-Info.plist
+
+# Flutter
+mobile/ios/Pods/
+mobile/ios/.symlinks/
+mobile/android/.gradle/
+mobile/android/app/debug/
+mobile/android/app/profile/
+mobile/android/app/release/
+mobile/.packages
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+
+# Python
+__pycache__/
+*.pyc

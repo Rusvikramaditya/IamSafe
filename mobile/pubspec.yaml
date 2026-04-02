@@ -1,0 +1,53 @@
+name: iamsafe
+description: Daily safety check-in app for seniors living alone.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Firebase
+  firebase_core: ^3.8.0
+  firebase_auth: ^5.3.0
+  cloud_firestore: ^5.5.0
+  firebase_storage: ^12.3.0
+  firebase_messaging: ^15.1.0
+
+  # State management
+  provider: ^6.1.2
+
+  # HTTP client
+  http: ^1.2.0
+
+  # Secure storage for auth tokens
+  flutter_secure_storage: ^9.2.0
+
+  # Image picker for selfies
+  image_picker: ^1.1.0
+  image: ^4.3.0
+
+  # RevenueCat subscriptions
+  purchases_flutter: ^8.2.0
+
+  # UI
+  cupertino_icons: ^1.0.8
+  google_fonts: ^6.2.0
+
+  # Utilities
+  intl: ^0.19.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
+    - assets/sounds/

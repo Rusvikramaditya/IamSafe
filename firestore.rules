@@ -1,0 +1,62 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users: read/write own doc only
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Senior settings: senior can read/write own settings
+    match /seniorSettings/{seniorId} {
+      allow read, write: if request.auth != null && request.auth.uid == seniorId;
+    }
+
+    // Contacts: senior can manage their own contacts
+    match /contacts/{contactId} {
+      allow read, write: if request.auth != null
+        && resource.data.seniorId == request.auth.uid;
+      allow create: if request.auth != null
+        && request.resource.data.seniorId == request.auth.uid;
+    }
+
+    // Check-ins: senior can read/create own; linked caregiver can read
+    match /checkIns/{checkInId} {
+      allow read: if request.auth != null
+        && (resource.data.seniorId == request.auth.uid
+            || isCaregiverOf(resource.data.seniorId, request.auth.uid));
+      allow create: if request.auth != null
+        && request.resource.data.seniorId == request.auth.uid;
+    }
+
+    // Alert log: read-only for senior and linked caregiver
+    match /alertLog/{alertId} {
+      allow read: if request.auth != null
+        && (resource.data.seniorId == request.auth.uid
+            || isCaregiverOf(resource.data.seniorId, request.auth.uid));
+    }
+
+    // Senior-caregiver links: both parties can read; senior creates
+    match /seniorCaregiverLinks/{linkId} {
+      allow read: if request.auth != null
+        && (resource.data.seniorId == request.auth.uid
+            || resource.data.caregiverId == request.auth.uid);
+      allow create: if request.auth != null
+        && request.resource.data.seniorId == request.auth.uid;
+      allow update: if request.auth != null;
+    }
+
+    // Helper: check if uid is a linked caregiver for the senior
+    function isCaregiverOf(seniorId, caregiverId) {
+      return exists(/databases/$(database)/documents/seniorCaregiverLinks/$(seniorId + '_' + caregiverId))
+        || existsLink(seniorId, caregiverId);
+    }
+
+    // Note: Firestore rules can't do arbitrary queries.
+    // Complex caregiver auth is enforced server-side (Cloud Run).
+    // These rules provide a baseline; the backend does the full check.
+    function existsLink(seniorId, caregiverId) {
+      return false; // Placeholder — real auth enforced server-side
+    }
+  }
+}
