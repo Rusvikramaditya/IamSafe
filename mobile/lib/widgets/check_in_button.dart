@@ -79,7 +79,7 @@ class _CheckInButtonState extends State<CheckInButton>
           ? 'You are safe today. Check-in complete.'
           : 'Tap to check in. I am safe button.',
       child: AnimatedBuilder(
-        animation: _pulseAnimation,
+        animation: _pulseController,
         builder: (context, child) {
           return Transform.scale(
             scale: widget.checkedIn ? 1.0 : _pulseAnimation.value,

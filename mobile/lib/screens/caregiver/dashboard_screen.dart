@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:provider/provider.dart';
 import '../../services/api_service.dart';
 import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/status_helpers.dart';
 import '../auth/welcome_screen.dart';
 import 'check_in_detail_screen.dart';
 import 'settings_screen.dart';
@@ -15,6 +17,10 @@ class CaregiverDashboardScreen extends StatefulWidget {
 }
 
 class _CaregiverDashboardScreenState extends State<CaregiverDashboardScreen> {
+  static const _storage = FlutterSecureStorage();
+  static const _seniorIdKey = 'linked_senior_id';
+  static const _seniorNameKey = 'linked_senior_name';
+
   bool _loading = true;
   String? _error;
   String? _seniorId;
@@ -44,31 +50,51 @@ class _CaregiverDashboardScreenState extends State<CaregiverDashboardScreen> {
     });
 
     try {
-      // For now, use the current user's ID as the senior to view their own dashboard,
-      // or find linked senior. We'll try getting the user profile first.
-      final profile = await ApiService.getUserProfile();
+      // First try to get linked seniors from the backend
+      final linkedResult = await ApiService.getLinkedSeniors();
+      final seniors = linkedResult['seniors'] as List? ?? [];
 
-      if (profile['role'] == 'caregiver') {
-        // Try to get linked seniors - use dashboard endpoint with own ID which will fail,
-        // then we know we need to link. For a real implementation we'd need a
-        // "get linked seniors" endpoint. For now, we'll use a stored seniorId.
-        // Let's check if we have a senior linked by trying the summary endpoint.
-        if (_seniorId == null) {
-          setState(() {
-            _loading = false;
-            _hasLinkedSenior = false;
-          });
+      if (seniors.isNotEmpty) {
+        final senior = seniors[0]; // Use first linked senior
+        _seniorId = senior['seniorId'];
+        _seniorName = senior['fullName'];
+
+        // Persist for offline access
+        if (_seniorId != null) {
+          await _storage.write(key: _seniorIdKey, value: _seniorId!);
+          await _storage.write(key: _seniorNameKey, value: _seniorName ?? '');
+        }
+
+        await _fetchSeniorData(_seniorId!);
+        return;
+      }
+
+      // No linked seniors on backend — try cached ID
+      final cachedId = await _storage.read(key: _seniorIdKey);
+      if (cachedId != null) {
+        _seniorId = cachedId;
+        _seniorName = await _storage.read(key: _seniorNameKey);
+        await _fetchSeniorData(cachedId);
+        return;
+      }
+
+      // No seniors found at all
+      setState(() {
+        _loading = false;
+        _hasLinkedSenior = false;
+      });
+    } catch (e) {
+      // Try cached senior ID on network error
+      try {
+        final cachedId = await _storage.read(key: _seniorIdKey);
+        if (cachedId != null) {
+          _seniorId = cachedId;
+          _seniorName = await _storage.read(key: _seniorNameKey);
+          await _fetchSeniorData(cachedId);
           return;
         }
-      } else {
-        // Senior viewing own dashboard
-        _seniorId = null; // Will use own UID
-      }
+      } catch (_) {}
 
-      if (_seniorId != null) {
-        await _fetchSeniorData(_seniorId!);
-      }
-    } catch (e) {
       setState(() {
         _loading = false;
         _error = 'Could not load dashboard.';
@@ -108,9 +134,18 @@ class _CaregiverDashboardScreenState extends State<CaregiverDashboardScreen> {
 
     try {
       final result = await ApiService.linkSenior(code);
-      final seniorId = result['seniorId'];
+      final seniorId = result['seniorId'] as String?;
+      final seniorName = result['seniorName'] as String?;
+
       if (seniorId != null) {
-        setState(() => _seniorId = seniorId);
+        // Persist the linked senior
+        await _storage.write(key: _seniorIdKey, value: seniorId);
+        await _storage.write(key: _seniorNameKey, value: seniorName ?? '');
+
+        setState(() {
+          _seniorId = seniorId;
+          _seniorName = seniorName;
+        });
         await _fetchSeniorData(seniorId);
         _inviteController.clear();
       }
@@ -126,55 +161,52 @@ class _CaregiverDashboardScreenState extends State<CaregiverDashboardScreen> {
     }
   }
 
-  Color _statusColor(String? status) {
-    switch (status) {
-      case 'on_time':
-        return AppTheme.safeGreen;
-      case 'late':
-        return AppTheme.warningYellow;
-      case 'missed':
-        return AppTheme.alertRed;
-      default:
-        return Colors.grey[300]!;
-    }
-  }
-
-  IconData _statusIcon(String? status) {
-    switch (status) {
-      case 'on_time':
-        return Icons.check_circle;
-      case 'late':
-        return Icons.access_time;
-      case 'missed':
-        return Icons.cancel;
-      default:
-        return Icons.circle_outlined;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
         child: _loading
             ? const Center(child: CircularProgressIndicator())
-            : !_hasLinkedSenior
-                ? _buildLinkSeniorView()
-                : RefreshIndicator(
-                    onRefresh: () => _fetchSeniorData(_seniorId!),
-                    child: ListView(
-                      padding: const EdgeInsets.all(24),
-                      children: [
-                        _buildHeader(),
-                        const SizedBox(height: 24),
-                        _buildStreakCard(),
-                        const SizedBox(height: 24),
-                        _buildCalendarGrid(),
-                        const SizedBox(height: 24),
-                        _buildRecentActivity(),
-                      ],
-                    ),
-                  ),
+            : _error != null
+                ? _buildErrorView()
+                : !_hasLinkedSenior
+                    ? _buildLinkSeniorView()
+                    : RefreshIndicator(
+                        onRefresh: () => _fetchSeniorData(_seniorId!),
+                        child: ListView(
+                          padding: const EdgeInsets.all(24),
+                          children: [
+                            _buildHeader(),
+                            const SizedBox(height: 24),
+                            _buildStreakCard(),
+                            const SizedBox(height: 24),
+                            _buildCalendarGrid(),
+                            const SizedBox(height: 24),
+                            _buildRecentActivity(),
+                          ],
+                        ),
+                      ),
+      ),
+    );
+  }
+
+  Widget _buildErrorView() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 64, color: AppTheme.alertRed),
+            const SizedBox(height: 16),
+            Text(_error!, style: const TextStyle(fontSize: 20), textAlign: TextAlign.center),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: _loadDashboard,
+              child: const Text('Retry', style: TextStyle(fontSize: 18)),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -269,12 +301,15 @@ class _CaregiverDashboardScreenState extends State<CaregiverDashboardScreen> {
   }
 
   Widget _buildCalendarGrid() {
-    // Build a 30-day grid going back from today
-    final today = DateTime.now();
-    final dayMap = <String, String>{};
+    // Build a date-ordered grid from the _days data
+    final dayMap = <String, Map<String, dynamic>>{};
     for (final d in _days) {
-      dayMap[d['date']] = d['status'];
+      dayMap[d['date']] = d;
     }
+
+    // Show last 28 days (4 rows of 7) for a clean grid
+    final today = DateTime.now();
+    const gridDays = 28;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -292,19 +327,23 @@ class _CaregiverDashboardScreenState extends State<CaregiverDashboardScreen> {
             mainAxisSpacing: 8,
             crossAxisSpacing: 8,
           ),
-          itemCount: _days.isEmpty ? 7 : (_days.length > 30 ? 30 : _days.length + (7 - _days.length % 7) % 7),
+          itemCount: gridDays,
           itemBuilder: (context, index) {
-            final date = today.subtract(Duration(days: index));
+            // Oldest first: item 0 = 27 days ago, item 27 = today
+            final date = today.subtract(Duration(days: gridDays - 1 - index));
             final dateStr = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-            final status = dayMap[dateStr];
+            final dayData = dayMap[dateStr];
+            final status = dayData?['status'] as String?;
 
             return GestureDetector(
-              onTap: status != null ? () => _onDayTapped(dateStr, status) : null,
+              onTap: dayData != null
+                  ? () => _onDayTapped(dateStr, status ?? 'unknown', dayData)
+                  : null,
               child: Semantics(
                 label: '$dateStr: ${status ?? 'no data'}',
                 child: Container(
                   decoration: BoxDecoration(
-                    color: _statusColor(status),
+                    color: StatusHelpers.statusColor(status),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Center(
@@ -321,7 +360,7 @@ class _CaregiverDashboardScreenState extends State<CaregiverDashboardScreen> {
                         ),
                         if (status != null)
                           Icon(
-                            _statusIcon(status),
+                            StatusHelpers.statusIcon(status),
                             size: 14,
                             color: Colors.white,
                           ),
@@ -387,34 +426,24 @@ class _CaregiverDashboardScreenState extends State<CaregiverDashboardScreen> {
               margin: const EdgeInsets.only(bottom: 8),
               child: ListTile(
                 leading: Icon(
-                  _statusIcon(d['status']),
-                  color: _statusColor(d['status']),
+                  StatusHelpers.statusIcon(d['status']),
+                  color: StatusHelpers.statusColor(d['status']),
                   size: 32,
                 ),
                 title: Text(d['date'] ?? '', style: const TextStyle(fontSize: 18)),
                 subtitle: Text(
-                  d['status'] == 'on_time'
-                      ? 'Checked in on time'
-                      : d['status'] == 'late'
-                          ? 'Checked in late'
-                          : 'Missed check-in',
+                  StatusHelpers.statusLabel(d['status']),
                   style: const TextStyle(fontSize: 16),
                 ),
                 trailing: const Icon(Icons.chevron_right, size: 28),
-                onTap: () => _onDayTapped(d['date'], d['status']),
+                onTap: () => _onDayTapped(d['date'], d['status'], d),
               ),
             )),
       ],
     );
   }
 
-  void _onDayTapped(String date, String status) {
-    // Find the check-in for this date to get the ID
-    final day = _days.firstWhere(
-      (d) => d['date'] == date,
-      orElse: () => {},
-    );
-
+  void _onDayTapped(String date, String status, Map<String, dynamic> dayData) {
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -422,7 +451,8 @@ class _CaregiverDashboardScreenState extends State<CaregiverDashboardScreen> {
           seniorId: _seniorId!,
           date: date,
           status: status,
-          checkedInAt: day['checkedInAt'],
+          checkedInAt: dayData['checkedInAt'],
+          checkInId: dayData['checkInId'],
         ),
       ),
     );

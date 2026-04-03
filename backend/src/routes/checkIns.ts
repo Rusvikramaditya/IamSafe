@@ -1,135 +1,139 @@
 import { Router } from 'express';
 import { db, storage } from '../config/firebase';
 import { authMiddleware, AuthRequest } from '../middleware/authMiddleware';
-import { checkInLimiter } from '../middleware/rateLimiter';
+import { checkInLimiter, generalLimiter } from '../middleware/rateLimiter';
+import { todayInTimezone, nowInTimezone } from '../config/timezone';
+import { v4 as uuidv4 } from 'uuid';
 
 export const checkInRoutes = Router();
 
-checkInRoutes.use(authMiddleware);
-
-// Submit a check-in
-checkInRoutes.post('/', checkInLimiter, async (req: AuthRequest, res) => {
+// Submit check-in
+checkInRoutes.post('/', checkInLimiter, authMiddleware, async (req: AuthRequest, res) => {
   try {
     const seniorId = req.uid!;
-    const now = new Date();
-    const checkInDate = now.toISOString().split('T')[0]; // YYYY-MM-DD
 
-    // Verify user is a senior
+    // Get senior's timezone
     const userDoc = await db.collection('users').doc(seniorId).get();
-    if (!userDoc.exists || userDoc.data()?.role !== 'senior') {
-      res.status(403).json({ error: 'Only seniors can check in' });
+    if (!userDoc.exists) {
+      res.status(404).json({ error: 'User not found' });
       return;
     }
+    const timezone = userDoc.data()?.timezone || 'America/New_York';
+    const today = todayInTimezone(timezone);
 
-    // Check for existing check-in today
-    const existingSnap = await db
+    // Check for duplicate
+    const existing = await db
       .collection('checkIns')
       .where('seniorId', '==', seniorId)
-      .where('checkInDate', '==', checkInDate)
+      .where('checkInDate', '==', today)
+      .where('status', '!=', 'missed') // Allow check-in even if missed record exists
       .limit(1)
       .get();
 
-    if (!existingSnap.empty) {
-      const existing = existingSnap.docs[0];
-      res.json({
-        message: 'Already checked in today',
-        checkIn: { id: existing.id, ...existing.data() },
-      });
+    if (!existing.empty) {
+      res.status(409).json({ error: 'Already checked in today', checkIn: { id: existing.docs[0].id, ...existing.docs[0].data() } });
       return;
     }
 
-    // Determine status based on check-in window
-    const settingsDoc = await db.collection('seniorSettings').doc(seniorId).get();
-    const settings = settingsDoc.data();
-    let status: 'on_time' | 'late' = 'on_time';
-
-    if (settings) {
-      const [endH, endM] = settings.windowEnd.split(':').map(Number);
-      const userTz = userDoc.data()?.timezone || 'America/New_York';
-      const nowInTz = new Date(now.toLocaleString('en-US', { timeZone: userTz }));
-      const endToday = new Date(nowInTz);
-      endToday.setHours(endH, endM, 0, 0);
-
-      if (nowInTz > endToday) {
-        status = 'late';
-      }
-    }
+    // Determine status based on window
+    const settings = await db.collection('seniorSettings').doc(seniorId).get();
+    const settingsData = settings.data() || {};
+    const [endH, endM] = (settingsData.windowEnd || '10:00').split(':').map(Number);
+    const nowTz = nowInTimezone(timezone);
+    const windowEnd = nowTz.hour(endH).minute(endM).second(0).millisecond(0);
+    const status = nowTz.isAfter(windowEnd) ? 'late' : 'on_time';
 
     const checkInRef = await db.collection('checkIns').add({
       seniorId,
-      checkInDate,
-      checkedInAt: now,
+      checkInDate: today,
+      checkedInAt: new Date().toISOString(),
       status,
       selfiePath: null,
+      hasSelfie: false,
     });
 
     res.status(201).json({
       message: 'Check-in recorded',
-      checkIn: { id: checkInRef.id, seniorId, checkInDate, checkedInAt: now, status },
+      checkIn: {
+        id: checkInRef.id,
+        checkInDate: today,
+        checkedInAt: new Date().toISOString(),
+        status,
+      },
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Check-in error:', err);
     res.status(500).json({ error: 'Check-in failed' });
   }
 });
 
-// Get today's check-in
-checkInRoutes.get('/today', async (req: AuthRequest, res) => {
+// Get today's check-in status
+checkInRoutes.get('/today', generalLimiter, authMiddleware, async (req: AuthRequest, res) => {
   try {
-    const uid = req.uid!;
-    const today = new Date().toISOString().split('T')[0];
+    const seniorId = req.uid!;
 
-    const snap = await db
+    const userDoc = await db.collection('users').doc(seniorId).get();
+    const timezone = userDoc.exists ? userDoc.data()?.timezone || 'America/New_York' : 'America/New_York';
+    const today = todayInTimezone(timezone);
+
+    const checkInSnap = await db
       .collection('checkIns')
-      .where('seniorId', '==', uid)
+      .where('seniorId', '==', seniorId)
       .where('checkInDate', '==', today)
+      .where('status', '!=', 'missed')
       .limit(1)
       .get();
 
-    if (snap.empty) {
-      res.json({ checkedIn: false, checkIn: null });
+    if (checkInSnap.empty) {
+      res.json({ checkedIn: false });
       return;
     }
 
-    res.json({ checkedIn: true, checkIn: { id: snap.docs[0].id, ...snap.docs[0].data() } });
-  } catch (err: any) {
+    const data = checkInSnap.docs[0].data();
+    res.json({
+      checkedIn: true,
+      checkIn: {
+        id: checkInSnap.docs[0].id,
+        ...data,
+      },
+    });
+  } catch (err: unknown) {
     console.error('Get today check-in error:', err);
-    res.status(500).json({ error: 'Failed to get check-in status' });
+    res.status(500).json({ error: 'Failed to get status' });
   }
 });
 
 // Get check-in history
-checkInRoutes.get('/history', async (req: AuthRequest, res) => {
+checkInRoutes.get('/history', generalLimiter, authMiddleware, async (req: AuthRequest, res) => {
   try {
-    const uid = req.uid!;
+    const seniorId = req.uid!;
+    const limit = Math.min(parseInt(req.query.limit as string, 10) || 30, 90);
 
-    // Free tier: max 7 days. Premium/family: up to 90 days.
-    const userDoc = await db.collection('users').doc(uid).get();
-    const entitlements: string[] = userDoc.data()?.entitlements || [];
-    const isPremium = entitlements.includes('premium') || entitlements.includes('family');
-    const maxDays = isPremium ? 90 : 7;
-    const limit = Math.min(parseInt(req.query.limit as string) || maxDays, maxDays);
-
-    const snap = await db
+    const checkInsSnap = await db
       .collection('checkIns')
-      .where('seniorId', '==', uid)
+      .where('seniorId', '==', seniorId)
       .orderBy('checkInDate', 'desc')
       .limit(limit)
       .get();
 
-    const checkIns = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-    res.json({ checkIns, maxDays });
-  } catch (err: any) {
+    const checkIns = checkInsSnap.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    res.json({ checkIns });
+  } catch (err: unknown) {
     console.error('Get history error:', err);
     res.status(500).json({ error: 'Failed to get history' });
   }
 });
 
-// Get single check-in with signed selfie URL
-checkInRoutes.get('/:id', async (req: AuthRequest, res) => {
+// Get single check-in by ID
+checkInRoutes.get('/:checkInId', generalLimiter, authMiddleware, async (req: AuthRequest, res) => {
   try {
-    const id = req.params.id as string;
-    const doc = await db.collection('checkIns').doc(id).get();
+    const checkInId = req.params.checkInId as string;
+    const doc = await db.collection('checkIns').doc(checkInId).get();
+
     if (!doc.exists) {
       res.status(404).json({ error: 'Check-in not found' });
       return;
@@ -137,97 +141,115 @@ checkInRoutes.get('/:id', async (req: AuthRequest, res) => {
 
     const data = doc.data()!;
 
-    // Only the senior or their linked caregiver can view
-    const uid = req.uid!;
-    if (data.seniorId !== uid) {
+    // Verify access: own check-in or linked caregiver
+    if (data.seniorId !== req.uid) {
       const linkSnap = await db
         .collection('seniorCaregiverLinks')
         .where('seniorId', '==', data.seniorId)
-        .where('caregiverId', '==', uid)
+        .where('caregiverId', '==', req.uid)
+        .where('acceptedAt', '!=', null)
         .limit(1)
         .get();
-
       if (linkSnap.empty) {
-        res.status(403).json({ error: 'Not authorized to view this check-in' });
+        res.status(403).json({ error: 'Not authorized' });
         return;
       }
     }
 
+    // Generate signed selfie URL if selfie exists
     let selfieUrl: string | null = null;
-    if (data.selfiePath) {
-      // Selfie history is premium-only. Today's selfie is always viewable.
-      const today = new Date().toISOString().split('T')[0];
-      const isToday = data.checkInDate === today;
-
-      if (isToday) {
-        const [url] = await storage
-          .bucket()
-          .file(data.selfiePath)
-          .getSignedUrl({
-            action: 'read',
-            expires: Date.now() + 60 * 60 * 1000, // 1 hour
-          });
-        selfieUrl = url;
-      } else {
-        // Check entitlements — use the senior's entitlements
-        const seniorDoc = await db.collection('users').doc(data.seniorId).get();
-        const entitlements: string[] = seniorDoc.data()?.entitlements || [];
-        const isPremium = entitlements.includes('premium') || entitlements.includes('family');
-
-        if (isPremium) {
-          const [url] = await storage
-            .bucket()
-            .file(data.selfiePath)
-            .getSignedUrl({
-              action: 'read',
-              expires: Date.now() + 60 * 60 * 1000, // 1 hour
-            });
-          selfieUrl = url;
-        }
-      }
+    if (data.hasSelfie && data.selfiePath) {
+      const bucket = storage.bucket();
+      const file = bucket.file(data.selfiePath);
+      const [url] = await file.getSignedUrl({
+        action: 'read',
+        expires: Date.now() + 60 * 60 * 1000, // 1 hour
+      });
+      selfieUrl = url;
     }
 
-    const hasSelfie = !!data.selfiePath;
-    res.json({ checkIn: { id: doc.id, ...data, selfieUrl, hasSelfie } });
-  } catch (err: any) {
+    res.json({
+      checkIn: {
+        id: doc.id,
+        ...data,
+        selfieUrl,
+      },
+    });
+  } catch (err: unknown) {
     console.error('Get check-in error:', err);
     res.status(500).json({ error: 'Failed to get check-in' });
   }
 });
 
-// Generate presigned upload URL for selfie
-checkInRoutes.post('/selfie-url', async (req: AuthRequest, res) => {
+// Generate selfie upload URL (separate from confirming upload)
+checkInRoutes.post('/:checkInId/selfie-url', generalLimiter, authMiddleware, async (req: AuthRequest, res) => {
   try {
-    const seniorId = req.uid!;
-    const { checkInId } = req.body;
+    const checkInId = req.params.checkInId as string;
+    const doc = await db.collection('checkIns').doc(checkInId).get();
 
-    if (!checkInId) {
-      res.status(400).json({ error: 'checkInId is required' });
-      return;
-    }
-
-    const checkInDoc = await db.collection('checkIns').doc(checkInId).get();
-    if (!checkInDoc.exists || checkInDoc.data()?.seniorId !== seniorId) {
+    if (!doc.exists || doc.data()?.seniorId !== req.uid) {
       res.status(403).json({ error: 'Not authorized' });
       return;
     }
 
-    const filePath = `selfies/${seniorId}/${checkInId}.jpg`;
-    const [url] = await storage
-      .bucket()
-      .file(filePath)
-      .getSignedUrl({
-        action: 'write',
-        expires: Date.now() + 15 * 60 * 1000, // 15 min
-        contentType: 'image/jpeg',
-      });
+    const selfiePath = `selfies/${req.uid}/${checkInId}.jpg`;
+    const bucket = storage.bucket();
+    const file = bucket.file(selfiePath);
 
-    // Update check-in with selfie path
-    await db.collection('checkIns').doc(checkInId).update({ selfiePath: filePath });
+    const [uploadUrl] = await file.getSignedUrl({
+      action: 'write',
+      expires: Date.now() + 15 * 60 * 1000, // 15 minutes
+      contentType: 'image/jpeg',
+    });
 
-    res.json({ uploadUrl: url, filePath });
-  } catch (err: any) {
-    console.error('Selfie URL error:', err);
+    // Do NOT set selfiePath yet — wait for upload confirmation
+    res.json({ uploadUrl, selfiePath });
+  } catch (err: unknown) {
+    console.error('Get selfie URL error:', err);
     res.status(500).json({ error: 'Failed to generate upload URL' });
+  }
+});
+
+// Confirm selfie was uploaded — sets selfiePath on the check-in record
+checkInRoutes.post('/:checkInId/selfie-confirm', generalLimiter, authMiddleware, async (req: AuthRequest, res) => {
+  try {
+    const checkInId = req.params.checkInId as string;
+    const { selfiePath } = req.body;
+
+    if (!selfiePath) {
+      res.status(400).json({ error: 'selfiePath is required' });
+      return;
+    }
+
+    // Verify the file actually exists in storage before transacting
+    const bucket = storage.bucket();
+    const file = bucket.file(selfiePath);
+    const [exists] = await file.exists();
+    if (!exists) {
+      res.status(400).json({ error: 'Selfie file not found in storage' });
+      return;
+    }
+
+    // Use transaction to atomically verify ownership + update
+    await db.runTransaction(async (txn) => {
+      const docRef = db.collection('checkIns').doc(checkInId);
+      const doc = await txn.get(docRef);
+
+      if (!doc.exists || doc.data()?.seniorId !== req.uid) {
+        throw new Error('NOT_AUTHORIZED');
+      }
+
+      txn.update(docRef, { selfiePath, hasSelfie: true });
+    });
+
+    res.json({ message: 'Selfie confirmed' });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg === 'NOT_AUTHORIZED') {
+      res.status(403).json({ error: 'Not authorized' });
+      return;
+    }
+    console.error('Confirm selfie error:', err);
+    res.status(500).json({ error: 'Failed to confirm selfie' });
   }
 });

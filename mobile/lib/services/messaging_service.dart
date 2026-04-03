@@ -1,16 +1,19 @@
+import 'package:flutter/foundation.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'api_service.dart';
 
 class MessagingService {
   static final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
   static bool _initialized = false;
+  static String? _pendingToken;
 
-  /// Initialize FCM and request permissions
+  /// Initialize FCM and request permissions.
+  /// Call early (in main). Token is stored but NOT sent to backend until
+  /// [sendTokenToBackend] is called after user authentication.
   static Future<void> initialize() async {
     if (_initialized) return;
 
     try {
-      // Request notification permissions (iOS)
       final settings = await _firebaseMessaging.requestPermission(
         alert: true,
         announcement: false,
@@ -22,15 +25,13 @@ class MessagingService {
       );
 
       if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-        // Get FCM token
-        final token = await _firebaseMessaging.getToken();
-        if (token != null) {
-          // Send token to backend
-          await _updateTokenOnBackend(token);
-        }
+        _pendingToken = await _firebaseMessaging.getToken();
 
-        // Listen for token refresh
-        _firebaseMessaging.onTokenRefresh.listen(_updateTokenOnBackend);
+        // Listen for token refresh — store but only push if authenticated
+        _firebaseMessaging.onTokenRefresh.listen((token) {
+          _pendingToken = token;
+          _trySendToken(token);
+        });
 
         // Handle foreground messages
         FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
@@ -41,31 +42,35 @@ class MessagingService {
         _initialized = true;
       }
     } catch (e) {
-      print('FCM initialization failed: $e');
+      debugPrint('FCM initialization failed: $e');
     }
   }
 
-  static Future<void> _updateTokenOnBackend(String token) async {
+  /// Send the stored FCM token to backend. Call after user signs in.
+  static Future<void> sendTokenToBackend() async {
+    if (_pendingToken != null) {
+      await _trySendToken(_pendingToken!);
+    }
+  }
+
+  static Future<void> _trySendToken(String token) async {
     try {
       await ApiService.updateFcmToken(token);
     } catch (e) {
-      print('Failed to update FCM token on backend: $e');
+      debugPrint('Failed to update FCM token on backend: $e');
     }
   }
 
   static void _handleForegroundMessage(RemoteMessage message) {
-    print('Foreground message: ${message.notification?.title}');
-    // In a real app, you'd show a local notification or in-app banner
-    // For now, we just log it. The system notification will appear automatically.
+    debugPrint('Foreground message: ${message.notification?.title}');
   }
 
   static void _handleBackgroundMessageTap(RemoteMessage message) {
-    print('Background message tap: ${message.notification?.title}');
-    // Handle navigation or actions based on message data
+    debugPrint('Background message tap: ${message.notification?.title}');
   }
 
   /// Handle background message (called by Firebase when app is in background)
   static Future<void> handleBackgroundMessage(RemoteMessage message) async {
-    print('Handling a background message: ${message.messageId}');
+    debugPrint('Handling a background message: ${message.messageId}');
   }
 }

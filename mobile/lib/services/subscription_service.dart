@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 
 /// RevenueCat subscription service.
@@ -64,13 +65,14 @@ class SubscriptionService extends ChangeNotifier {
   Future<bool> purchase(Package package) async {
     try {
       final result = await Purchases.purchasePackage(package);
-      _customerInfo = result.customerInfo;
+      _customerInfo = result;
       notifyListeners();
       return isPremium;
+    } on PlatformException catch (e) {
+      debugPrint('Purchase error: ${e.code} — ${e.message}');
+      return false;
     } catch (e) {
-      if (e is PurchasesErrorCode) {
-        debugPrint('Purchase error: $e');
-      }
+      debugPrint('Purchase error: $e');
       return false;
     }
   }

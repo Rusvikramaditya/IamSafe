@@ -1,82 +1,86 @@
 import { Router } from 'express';
 import { db } from '../config/firebase';
 import { authMiddleware, AuthRequest } from '../middleware/authMiddleware';
+import { generalLimiter } from '../middleware/rateLimiter';
+import { todayInTimezone } from '../config/timezone';
 
 export const dashboardRoutes = Router();
 
-dashboardRoutes.use(authMiddleware);
+/**
+ * Middleware: verify the authenticated user has access to the given senior's data.
+ * The user must be the senior themselves OR a linked caregiver.
+ */
+async function verifySeniorAccess(
+  req: AuthRequest,
+  seniorId: string
+): Promise<boolean> {
+  if (req.uid === seniorId) return true;
 
-// 30-day summary for a senior
-dashboardRoutes.get('/:seniorId/summary', async (req: AuthRequest, res) => {
+  const linkSnap = await db
+    .collection('seniorCaregiverLinks')
+    .where('seniorId', '==', seniorId)
+    .where('caregiverId', '==', req.uid)
+    .where('acceptedAt', '!=', null)
+    .limit(1)
+    .get();
+
+  return !linkSnap.empty;
+}
+
+// 30-day summary
+dashboardRoutes.get('/:seniorId/summary', generalLimiter, authMiddleware, async (req: AuthRequest, res) => {
   try {
-    const caregiverId = req.uid!;
-    const { seniorId } = req.params;
+    const seniorId = req.params.seniorId as string;
 
-    // Verify caregiver is linked
-    const linkSnap = await db
-      .collection('seniorCaregiverLinks')
-      .where('seniorId', '==', seniorId)
-      .where('caregiverId', '==', caregiverId)
-      .limit(1)
-      .get();
-
-    // Allow senior to view their own dashboard too
-    if (linkSnap.empty && caregiverId !== seniorId) {
+    if (!(await verifySeniorAccess(req, seniorId))) {
       res.status(403).json({ error: 'Not authorized to view this senior' });
       return;
     }
 
-    // Free tier: 7-day summary. Premium/family: 30-day summary.
-    const seniorDoc = await db.collection('users').doc(seniorId as string).get();
-    const entitlements: string[] = seniorDoc.data()?.entitlements || [];
-    const isPremium = entitlements.includes('premium') || entitlements.includes('family');
-    const daysBack = isPremium ? 30 : 7;
+    // Get senior's timezone for correct date calculation
+    const userDoc = await db.collection('users').doc(seniorId).get();
+    const timezone = userDoc.data()?.timezone || 'America/New_York';
 
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - daysBack);
-    const startDate = cutoff.toISOString().split('T')[0];
-
-    const snap = await db
+    const checkInsSnap = await db
       .collection('checkIns')
       .where('seniorId', '==', seniorId)
-      .where('checkInDate', '>=', startDate)
       .orderBy('checkInDate', 'desc')
+      .limit(30)
       .get();
 
-    const days = snap.docs.map((doc) => ({
-      date: doc.data().checkInDate,
-      status: doc.data().status,
-      checkedInAt: doc.data().checkedInAt,
-    }));
+    const days = checkInsSnap.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        date: data.checkInDate,
+        status: data.status,
+        checkedInAt: data.checkedInAt,
+        checkInId: doc.id,
+        hasSelfie: data.hasSelfie || false,
+      };
+    });
 
-    res.json({ seniorId, days, daysBack });
-  } catch (err: any) {
+    res.json({ days, timezone });
+  } catch (err: unknown) {
     console.error('Dashboard summary error:', err);
-    res.status(500).json({ error: 'Failed to get summary' });
+    res.status(500).json({ error: 'Failed to get dashboard summary' });
   }
 });
 
 // Streak
-dashboardRoutes.get('/:seniorId/streak', async (req: AuthRequest, res) => {
+dashboardRoutes.get('/:seniorId/streak', generalLimiter, authMiddleware, async (req: AuthRequest, res) => {
   try {
-    const uid = req.uid!;
-    const { seniorId } = req.params;
+    const seniorId = req.params.seniorId as string;
 
-    // Quick auth check
-    if (uid !== seniorId) {
-      const linkSnap = await db
-        .collection('seniorCaregiverLinks')
-        .where('seniorId', '==', seniorId)
-        .where('caregiverId', '==', uid)
-        .limit(1)
-        .get();
-      if (linkSnap.empty) {
-        res.status(403).json({ error: 'Not authorized' });
-        return;
-      }
+    if (!(await verifySeniorAccess(req, seniorId))) {
+      res.status(403).json({ error: 'Not authorized' });
+      return;
     }
 
-    const snap = await db
+    // Get senior's timezone
+    const userDoc = await db.collection('users').doc(seniorId).get();
+    const timezone = userDoc.data()?.timezone || 'America/New_York';
+
+    const checkInsSnap = await db
       .collection('checkIns')
       .where('seniorId', '==', seniorId)
       .where('status', 'in', ['on_time', 'late'])
@@ -84,58 +88,60 @@ dashboardRoutes.get('/:seniorId/streak', async (req: AuthRequest, res) => {
       .limit(90)
       .get();
 
+    if (checkInsSnap.empty) {
+      res.json({ streak: 0 });
+      return;
+    }
+
+    // Calculate streak using timezone-correct dates
+    const { dayjs } = await import('../config/timezone');
     let streak = 0;
-    const today = new Date();
+    let expectedDate = dayjs().tz(timezone).startOf('day');
 
-    for (const doc of snap.docs) {
-      const expected = new Date(today);
-      expected.setDate(expected.getDate() - streak);
-      const expectedDate = expected.toISOString().split('T')[0];
+    for (const doc of checkInsSnap.docs) {
+      const data = doc.data();
+      const checkInDate = dayjs(data.checkInDate);
 
-      if (doc.data().checkInDate === expectedDate) {
+      if (checkInDate.isSame(expectedDate, 'day')) {
         streak++;
+        expectedDate = expectedDate.subtract(1, 'day');
       } else {
         break;
       }
     }
 
-    res.json({ seniorId, streak });
-  } catch (err: any) {
+    res.json({ streak });
+  } catch (err: unknown) {
     console.error('Streak error:', err);
     res.status(500).json({ error: 'Failed to get streak' });
   }
 });
 
 // Alert history
-dashboardRoutes.get('/:seniorId/alerts', async (req: AuthRequest, res) => {
+dashboardRoutes.get('/:seniorId/alerts', generalLimiter, authMiddleware, async (req: AuthRequest, res) => {
   try {
-    const uid = req.uid!;
-    const { seniorId } = req.params;
+    const seniorId = req.params.seniorId as string;
 
-    if (uid !== seniorId) {
-      const linkSnap = await db
-        .collection('seniorCaregiverLinks')
-        .where('seniorId', '==', seniorId)
-        .where('caregiverId', '==', uid)
-        .limit(1)
-        .get();
-      if (linkSnap.empty) {
-        res.status(403).json({ error: 'Not authorized' });
-        return;
-      }
+    if (!(await verifySeniorAccess(req, seniorId))) {
+      res.status(403).json({ error: 'Not authorized' });
+      return;
     }
 
-    const snap = await db
+    const alertsSnap = await db
       .collection('alertLog')
       .where('seniorId', '==', seniorId)
       .orderBy('sentAt', 'desc')
-      .limit(50)
+      .limit(30)
       .get();
 
-    const alerts = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    const alerts = alertsSnap.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
     res.json({ alerts });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Alert history error:', err);
-    res.status(500).json({ error: 'Failed to get alerts' });
+    res.status(500).json({ error: 'Failed to get alert history' });
   }
 });

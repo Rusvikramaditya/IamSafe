@@ -5,6 +5,7 @@ import 'api_service.dart';
 
 class AuthService extends ChangeNotifier {
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final GoogleSignIn _googleSignIn = GoogleSignIn();
 
   User? get currentUser => _auth.currentUser;
   bool get isLoggedIn => _auth.currentUser != null;
@@ -19,6 +20,7 @@ class AuthService extends ChangeNotifier {
       email: email,
       password: password,
     );
+    notifyListeners();
     return credential;
   }
 
@@ -46,10 +48,19 @@ class AuthService extends ChangeNotifier {
       email: email,
       password: password,
     );
+    notifyListeners();
     return credential;
   }
 
   Future<void> signOut() async {
+    // Also sign out of Google if the user signed in with Google
+    try {
+      if (await _googleSignIn.isSignedIn()) {
+        await _googleSignIn.signOut();
+      }
+    } catch (_) {
+      // Ignore Google sign-out errors
+    }
     await _auth.signOut();
     notifyListeners();
   }
@@ -61,7 +72,7 @@ class AuthService extends ChangeNotifier {
   /// Sign in with Google. Returns the UserCredential, or null if cancelled.
   /// `isNewUser` on the credential's additionalUserInfo indicates first sign-in.
   Future<UserCredential?> signInWithGoogle() async {
-    final googleUser = await GoogleSignIn().signIn();
+    final googleUser = await _googleSignIn.signIn();
     if (googleUser == null) return null; // user cancelled
 
     final googleAuth = await googleUser.authentication;
@@ -71,6 +82,7 @@ class AuthService extends ChangeNotifier {
     );
 
     final userCredential = await _auth.signInWithCredential(credential);
+    notifyListeners();
     return userCredential;
   }
 }

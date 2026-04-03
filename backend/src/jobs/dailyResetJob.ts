@@ -1,27 +1,46 @@
 import { db } from '../config/firebase';
+import { todayInTimezone } from '../config/timezone';
 
 export async function dailyResetJob(): Promise<{ reset: number }> {
-  const today = new Date().toISOString().split('T')[0];
-
-  // Reset alertSentToday for all seniors whose lastAlertReset is not today
+  // Reset alertSentToday for all seniors whose alertSentToday is true
   const settingsSnap = await db
     .collection('seniorSettings')
     .where('alertSentToday', '==', true)
     .get();
 
   let resetCount = 0;
+  const batch = db.batch();
 
   for (const doc of settingsSnap.docs) {
     const data = doc.data();
+    const seniorId = doc.id;
 
-    // Only reset if lastAlertReset is a previous day
-    if (data.lastAlertReset !== today) {
-      await doc.ref.update({
+    // Get the senior's timezone to calculate their "today"
+    let timezone = 'America/New_York';
+    try {
+      const userDoc = await db.collection('users').doc(seniorId).get();
+      if (userDoc.exists) {
+        timezone = userDoc.data()?.timezone || 'America/New_York';
+      }
+    } catch {
+      // Fall through with default timezone
+    }
+
+    const seniorToday = todayInTimezone(timezone);
+
+    // Only reset if lastAlertReset is a previous day in the senior's timezone
+    if (data.lastAlertReset !== seniorToday) {
+      batch.update(doc.ref, {
         alertSentToday: false,
-        lastAlertReset: today,
+        reminderSentToday: false,
+        lastAlertReset: seniorToday,
       });
       resetCount++;
     }
+  }
+
+  if (resetCount > 0) {
+    await batch.commit();
   }
 
   console.log(`dailyResetJob: reset ${resetCount} seniors`);

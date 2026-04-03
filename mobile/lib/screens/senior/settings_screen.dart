@@ -116,7 +116,7 @@ class _SeniorSettingsScreenState extends State<SeniorSettingsScreen> {
                   keyboardType: TextInputType.emailAddress,
                   style: const TextStyle(fontSize: 18),
                   decoration: const InputDecoration(labelText: 'Email'),
-                  validator: (v) => v != null && v.contains('@') ? null : 'Valid email required',
+                  validator: (v) => v != null && RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(v) ? null : 'Valid email required',
                 ),
                 const SizedBox(height: 12),
                 TextFormField(

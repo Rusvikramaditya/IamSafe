@@ -5,6 +5,8 @@ import '../../theme/app_theme.dart';
 import 'login_screen.dart';
 import 'signup_screen.dart';
 import 'setup_wizard_screen.dart';
+import '../senior/home_screen.dart';
+import '../caregiver/dashboard_screen.dart';
 
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
@@ -194,12 +196,10 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                           height: 24,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : Image.network(
-                          'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
+                      : const SizedBox(
                           width: 24,
                           height: 24,
-                          errorBuilder: (_, __, ___) =>
-                              const Icon(Icons.g_mobiledata, size: 28),
+                          child: Icon(Icons.g_mobiledata, size: 28),
                         ),
                   label: const Text(
                     'Continue with Google',
@@ -213,6 +213,33 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                     ),
                   ),
                 ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Dev Mode Bypass
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(builder: (_) => const SeniorHomeScreen()),
+                      );
+                    },
+                    child: const Text('Dev: Senior UI', style: TextStyle(color: Colors.grey)),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(builder: (_) => const CaregiverDashboardScreen()),
+                      );
+                    },
+                    child: const Text('Dev: Caregiver UI', style: TextStyle(color: Colors.grey)),
+                  ),
+                ],
               ),
 
               const Spacer(),

@@ -1,38 +1,60 @@
 import { Router } from 'express';
 import { db } from '../config/firebase';
 import { authMiddleware, AuthRequest } from '../middleware/authMiddleware';
+import { generalLimiter } from '../middleware/rateLimiter';
 
 export const settingsRoutes = Router();
 
-settingsRoutes.use(authMiddleware);
+/** Validate HH:MM time format with valid ranges. */
+function isValidTime(time: string): boolean {
+  const match = time.match(/^(\d{2}):(\d{2})$/);
+  if (!match) return false;
+  const h = parseInt(match[1], 10);
+  const m = parseInt(match[2], 10);
+  return h >= 0 && h <= 23 && m >= 0 && m <= 59;
+}
 
-// Get senior settings
-settingsRoutes.get('/', async (req: AuthRequest, res) => {
+// Get settings
+settingsRoutes.get('/', generalLimiter, authMiddleware, async (req: AuthRequest, res) => {
   try {
-    const uid = req.uid!;
-    const doc = await db.collection('seniorSettings').doc(uid).get();
-
+    const doc = await db.collection('seniorSettings').doc(req.uid!).get();
     if (!doc.exists) {
       res.status(404).json({ error: 'Settings not found' });
       return;
     }
-
     res.json({ settings: doc.data() });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Get settings error:', err);
     res.status(500).json({ error: 'Failed to get settings' });
   }
 });
 
-// Update senior settings
-settingsRoutes.put('/', async (req: AuthRequest, res) => {
+// Update settings
+settingsRoutes.put('/', generalLimiter, authMiddleware, async (req: AuthRequest, res) => {
   try {
-    const uid = req.uid!;
-    const allowed = ['windowStart', 'windowEnd', 'selfieEnabled', 'reminderMinutes'];
-    const updates: Record<string, any> = {};
+    const allowed = [
+      'windowStart',
+      'windowEnd',
+      'selfieEnabled',
+      'reminderMinutes',
+      'fcmToken', // Fixed: was missing from allowed list
+    ];
+    const updates: Record<string, unknown> = {};
 
     for (const key of allowed) {
-      if (req.body[key] !== undefined) updates[key] = req.body[key];
+      if (req.body[key] !== undefined) {
+        updates[key] = req.body[key];
+      }
+    }
+
+    // Validate time fields
+    if (updates.windowStart && !isValidTime(updates.windowStart as string)) {
+      res.status(400).json({ error: 'Invalid windowStart format. Use HH:MM (00:00–23:59)' });
+      return;
+    }
+    if (updates.windowEnd && !isValidTime(updates.windowEnd as string)) {
+      res.status(400).json({ error: 'Invalid windowEnd format. Use HH:MM (00:00–23:59)' });
+      return;
     }
 
     if (Object.keys(updates).length === 0) {
@@ -40,17 +62,20 @@ settingsRoutes.put('/', async (req: AuthRequest, res) => {
       return;
     }
 
-    // Validate time format
-    for (const key of ['windowStart', 'windowEnd']) {
-      if (updates[key] && !/^\d{2}:\d{2}$/.test(updates[key])) {
-        res.status(400).json({ error: `${key} must be in HH:mm format` });
-        return;
-      }
+    // If fcmToken is being updated, store it on the user doc (not settings)
+    if (updates.fcmToken !== undefined) {
+      await db.collection('users').doc(req.uid!).update({
+        fcmToken: updates.fcmToken,
+      });
+      delete updates.fcmToken;
     }
 
-    await db.collection('seniorSettings').doc(uid).update(updates);
+    if (Object.keys(updates).length > 0) {
+      await db.collection('seniorSettings').doc(req.uid!).update(updates);
+    }
+
     res.json({ message: 'Settings updated' });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Update settings error:', err);
     res.status(500).json({ error: 'Failed to update settings' });
   }

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../senior/home_screen.dart';
+import '../caregiver/dashboard_screen.dart';
 
 class SetupWizardScreen extends StatefulWidget {
   final String email;
@@ -56,6 +58,15 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
 
   int get _totalSteps => _role == 'senior' ? 4 : 2;
 
+  /// Auto-detect the device's IANA timezone name (e.g., "America/New_York").
+  Future<String> _detectTimezone() async {
+    try {
+      return await FlutterTimezone.getLocalTimezone();
+    } catch (_) {
+      return 'America/New_York';
+    }
+  }
+
   Future<void> _next() async {
     if (_step == 0) {
       setState(() => _step = 1);
@@ -74,6 +85,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
       });
 
       try {
+        final tz = await _detectTimezone();
         await Provider.of<AuthService>(context, listen: false).registerProfile(
           fullName: _nameController.text.trim(),
           email: widget.email,
@@ -81,6 +93,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
               ? _phoneController.text.trim()
               : null,
           role: _role,
+          timezone: tz,
         );
 
         if (_role == 'caregiver') {
@@ -98,6 +111,14 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
     }
 
     if (_step == 2) {
+      // Validate window: start must be before end
+      final startMinutes = _windowStart.hour * 60 + _windowStart.minute;
+      final endMinutes = _windowEnd.hour * 60 + _windowEnd.minute;
+      if (startMinutes >= endMinutes) {
+        setState(() => _error = 'Window start must be before window end.');
+        return;
+      }
+
       // Save check-in window settings
       setState(() {
         _loading = true;
@@ -139,7 +160,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
             email: _contactEmailController.text.trim(),
             relationship: _contactRelationController.text.trim().isNotEmpty
                 ? _contactRelationController.text.trim()
-                : null,
+                : 'Emergency Contact',
           );
         } catch (e) {
           // Non-blocking — they can add contacts later
@@ -154,8 +175,11 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
 
   void _finish() {
     if (mounted) {
+      final destination = _role == 'caregiver'
+          ? const CaregiverDashboardScreen()
+          : const SeniorHomeScreen();
       Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const SeniorHomeScreen()),
+        MaterialPageRoute(builder: (_) => destination),
         (route) => false,
       );
     }

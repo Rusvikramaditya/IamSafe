@@ -5,35 +5,66 @@ import { reminderJob } from '../jobs/reminderJob';
 
 export const jobRoutes = Router();
 
-// Cloud Scheduler calls these endpoints via HTTP
-// Auth is handled by Cloud Run's IAM (only Cloud Scheduler service account can invoke)
+/**
+ * Defense-in-depth: Verify Cloud Scheduler requests.
+ * Primary auth is Cloud Run IAM, but this header check prevents
+ * accidental invocation during dev or from misconfigured deployments.
+ */
+function verifyJobAuth(req: Request, res: Response): boolean {
+  const expectedKey = process.env.JOB_API_KEY;
+  if (!expectedKey) {
+    // No key set — allow in dev, block in production
+    if (process.env.NODE_ENV === 'production') {
+      console.error('JOB_API_KEY not set in production — blocking job request');
+      res.status(401).json({ error: 'Unauthorized' });
+      return false;
+    }
+    return true;
+  }
 
-jobRoutes.post('/missed-check-in', async (_req: Request, res: Response) => {
+  const providedKey = req.headers['x-job-api-key'];
+  if (providedKey !== expectedKey) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return false;
+  }
+  return true;
+}
+
+jobRoutes.post('/missed-checkin', async (req: Request, res: Response) => {
+  if (!verifyJobAuth(req, res)) return;
+
   try {
     const result = await missedCheckInJob();
     res.json({ success: true, ...result });
-  } catch (err: any) {
-    console.error('missedCheckInJob failed:', err);
-    res.status(500).json({ error: 'Job failed', message: err.message });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    console.error('missedCheckInJob failed:', msg);
+    res.status(500).json({ error: 'Job failed' });
   }
 });
 
-jobRoutes.post('/daily-reset', async (_req: Request, res: Response) => {
+jobRoutes.post('/daily-reset', async (req: Request, res: Response) => {
+  if (!verifyJobAuth(req, res)) return;
+
   try {
     const result = await dailyResetJob();
     res.json({ success: true, ...result });
-  } catch (err: any) {
-    console.error('dailyResetJob failed:', err);
-    res.status(500).json({ error: 'Job failed', message: err.message });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    console.error('dailyResetJob failed:', msg);
+    res.status(500).json({ error: 'Job failed' });
   }
 });
 
-jobRoutes.post('/reminder', async (_req: Request, res: Response) => {
+jobRoutes.post('/reminders', async (req: Request, res: Response) => {
+  if (!verifyJobAuth(req, res)) return;
+
   try {
     const result = await reminderJob();
     res.json({ success: true, ...result });
-  } catch (err: any) {
-    console.error('reminderJob failed:', err);
-    res.status(500).json({ error: 'Job failed', message: err.message });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    console.error('reminderJob failed:', msg);
+    res.status(500).json({ error: 'Job failed' });
   }
 });

@@ -307,6 +307,13 @@ Revenue after store cuts (~15%): Premium = ~$4.24/mo, Family = ~$8.49/mo.
 - [x] Senior settings: add contact dialog, delete contact
 - [x] Auth: forgot password flow on LoginScreen
 - [x] FCM messaging service — request permissions, send token to backend
+- [x] Google Sign-In across all auth screens
+- [x] Firebase Crashlytics for fatal error tracking
+- [x] Offline role caching (FlutterSecureStorage) — survives backend outages
+- [x] Webhook signature verification (Twilio, Resend, RevenueCat)
+- [x] Timezone-aware jobs via dayjs (IANA timezone, not Date.now())
+- [x] BYPASS_FIREBASE via --dart-define (defaults false in prod)
+- [x] flutter_timezone for IANA timezone detection on device
 
 ### Phase 4 — Store submission
 - [ ] App Store Connect account + IAP products configured

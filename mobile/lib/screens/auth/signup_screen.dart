@@ -105,7 +105,7 @@ class _SignupScreenState extends State<SignupScreen> {
                       prefixIcon: Icon(Icons.email_outlined, size: 28),
                     ),
                     validator: (v) =>
-                        v != null && v.contains('@') ? null : 'Enter a valid email',
+                        v != null && RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(v) ? null : 'Enter a valid email',
                   ),
                 ),
 

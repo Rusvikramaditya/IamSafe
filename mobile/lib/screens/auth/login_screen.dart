@@ -163,7 +163,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       prefixIcon: Icon(Icons.email_outlined, size: 28),
                     ),
                     validator: (v) =>
-                        v != null && v.contains('@') ? null : 'Enter a valid email',
+                        v != null && RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(v) ? null : 'Enter a valid email',
                   ),
                 ),
 
@@ -269,12 +269,10 @@ class _LoginScreenState extends State<LoginScreen> {
                             height: 24,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : Image.network(
-                            'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
+                        : const SizedBox(
                             width: 24,
                             height: 24,
-                            errorBuilder: (_, __, ___) =>
-                                const Icon(Icons.g_mobiledata, size: 28),
+                            child: Icon(Icons.g_mobiledata, size: 28),
                           ),
                     label: const Text(
                       'Continue with Google',

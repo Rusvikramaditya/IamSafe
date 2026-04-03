@@ -15,3 +15,19 @@ export const checkInLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+export const generalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: { error: 'Too many requests. Please slow down.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+export const webhookLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 100,
+  message: { error: 'Too many webhook requests.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});

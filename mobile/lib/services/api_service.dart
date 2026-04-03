@@ -1,36 +1,47 @@
 import 'dart:convert';
 import 'dart:typed_data';
-import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
+import '../main.dart';
 
+/// Centralized API service for all backend communication.
+///
+/// Note: Using static methods for quick iteration. For production testability,
+/// consider converting to an instance-based service with dependency injection.
 class ApiService {
-  // Update to Cloud Run URL in production
-  static const String _baseUrl = 'http://10.0.2.2:8080/api/v1';
+  static const String _baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'http://10.0.2.2:8080/api/v1',
+  );
 
-  static Future<String?> _getToken() async {
+  /// Get the current user's Firebase ID token, with automatic refresh.
+  static Future<String> _getToken() async {
+    if (BYPASS_FIREBASE) return 'demo_token';
     final user = FirebaseAuth.instance.currentUser;
-    return user?.getIdToken();
+    if (user == null) throw Exception('Not authenticated');
+    // forceRefresh: true ensures we never send an expired token
+    return await user.getIdToken(true) ?? '';
   }
 
-  static Future<Map<String, String>> _headers() async {
-    final token = await _getToken();
-    return {
-      'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
-    };
-  }
+  static Map<String, String> _headers(String token) => {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      };
 
-  // Auth
+  // ─── Auth ──────────────────────────────────────────────────────────
+
+  /// Register user profile after Firebase Auth signup.
   static Future<Map<String, dynamic>> register({
     required String fullName,
     required String email,
     String? phone,
     required String role,
-    String timezone = 'America/New_York',
+    String? timezone,
   }) async {
-    final response = await http.post(
+    final token = await _getToken();
+    final res = await http.post(
       Uri.parse('$_baseUrl/auth/register'),
-      headers: await _headers(),
+      headers: _headers(token),
       body: jsonEncode({
         'fullName': fullName,
         'email': email,
@@ -39,69 +50,188 @@ class ApiService {
         'timezone': timezone,
       }),
     );
-    return jsonDecode(response.body);
+    if (res.statusCode != 201) throw Exception(res.body);
+    return jsonDecode(res.body);
   }
 
-  static Future<Map<String, dynamic>> generateInviteCode() async {
-    final response = await http.post(
-      Uri.parse('$_baseUrl/auth/generate-invite'),
-      headers: await _headers(),
+  /// Get authenticated user's profile (role, name, entitlements).
+  static Future<Map<String, dynamic>> getUserProfile() async {
+    final token = await _getToken();
+    final res = await http.get(
+      Uri.parse('$_baseUrl/auth/profile'),
+      headers: _headers(token),
     );
-    return jsonDecode(response.body);
+    if (res.statusCode != 200) throw Exception(res.body);
+    return jsonDecode(res.body);
   }
 
+  /// Get linked seniors (for caregiver users).
+  static Future<Map<String, dynamic>> getLinkedSeniors() async {
+    final token = await _getToken();
+    final res = await http.get(
+      Uri.parse('$_baseUrl/auth/linked-seniors'),
+      headers: _headers(token),
+    );
+    if (res.statusCode != 200) throw Exception(res.body);
+    return jsonDecode(res.body);
+  }
+
+  /// Link caregiver to senior via invite code.
   static Future<Map<String, dynamic>> linkSenior(String inviteCode) async {
-    final response = await http.post(
+    final token = await _getToken();
+    final res = await http.post(
       Uri.parse('$_baseUrl/auth/link-senior'),
-      headers: await _headers(),
+      headers: _headers(token),
       body: jsonEncode({'inviteCode': inviteCode}),
     );
-    return jsonDecode(response.body);
+    if (res.statusCode != 200) throw Exception(res.body);
+    return jsonDecode(res.body);
   }
 
-  // Check-ins
+  /// Generate invite code (senior only).
+  static Future<Map<String, dynamic>> generateInviteCode() async {
+    final token = await _getToken();
+    final res = await http.post(
+      Uri.parse('$_baseUrl/auth/generate-invite'),
+      headers: _headers(token),
+    );
+    if (res.statusCode != 201) throw Exception(res.body);
+    return jsonDecode(res.body);
+  }
+
+  // ─── Check-ins ────────────────────────────────────────────────────
+
+  /// Submit daily check-in.
   static Future<Map<String, dynamic>> submitCheckIn() async {
-    final response = await http.post(
+    final token = await _getToken();
+    final res = await http.post(
       Uri.parse('$_baseUrl/check-ins'),
-      headers: await _headers(),
+      headers: _headers(token),
     );
-    return jsonDecode(response.body);
+    if (res.statusCode != 201) throw Exception(res.body);
+    return jsonDecode(res.body);
   }
 
+  /// Get today's check-in status.
   static Future<Map<String, dynamic>> getTodayCheckIn() async {
-    final response = await http.get(
+    final token = await _getToken();
+    final res = await http.get(
       Uri.parse('$_baseUrl/check-ins/today'),
-      headers: await _headers(),
+      headers: _headers(token),
     );
-    return jsonDecode(response.body);
+    if (res.statusCode != 200) throw Exception(res.body);
+    return jsonDecode(res.body);
   }
 
+  /// Get check-in history.
   static Future<Map<String, dynamic>> getCheckInHistory({int limit = 30}) async {
-    final response = await http.get(
+    final token = await _getToken();
+    final res = await http.get(
       Uri.parse('$_baseUrl/check-ins/history?limit=$limit'),
-      headers: await _headers(),
+      headers: _headers(token),
     );
-    return jsonDecode(response.body);
+    if (res.statusCode != 200) throw Exception(res.body);
+    return jsonDecode(res.body);
   }
 
-  // Contacts
+  /// Get single check-in by ID (includes signed selfie URL).
+  static Future<Map<String, dynamic>> getCheckIn(String checkInId) async {
+    final token = await _getToken();
+    final res = await http.get(
+      Uri.parse('$_baseUrl/check-ins/$checkInId'),
+      headers: _headers(token),
+    );
+    if (res.statusCode != 200) throw Exception(res.body);
+    return jsonDecode(res.body);
+  }
+
+  /// Get selfie upload URL (does not set selfiePath on the record).
+  static Future<Map<String, dynamic>> getSelfieUploadUrl(String checkInId) async {
+    final token = await _getToken();
+    final res = await http.post(
+      Uri.parse('$_baseUrl/check-ins/$checkInId/selfie-url'),
+      headers: _headers(token),
+    );
+    if (res.statusCode != 200) throw Exception(res.body);
+    return jsonDecode(res.body);
+  }
+
+  /// Upload selfie binary to signed URL.
+  static Future<void> uploadSelfie(String uploadUrl, Uint8List bytes) async {
+    final res = await http.put(
+      Uri.parse(uploadUrl),
+      headers: {'Content-Type': 'image/jpeg'},
+      body: bytes,
+    );
+    if (res.statusCode != 200 && res.statusCode != 201) {
+      throw Exception('Selfie upload failed: ${res.statusCode}');
+    }
+  }
+
+  /// Confirm selfie upload (sets hasSelfie on the check-in record).
+  static Future<void> confirmSelfie(String checkInId, String selfiePath) async {
+    final token = await _getToken();
+    final res = await http.post(
+      Uri.parse('$_baseUrl/check-ins/$checkInId/selfie-confirm'),
+      headers: _headers(token),
+      body: jsonEncode({'selfiePath': selfiePath}),
+    );
+    if (res.statusCode != 200) throw Exception(res.body);
+  }
+
+  // ─── Settings ─────────────────────────────────────────────────────
+
+  /// Get senior settings.
+  static Future<Map<String, dynamic>> getSettings() async {
+    final token = await _getToken();
+    final res = await http.get(
+      Uri.parse('$_baseUrl/settings'),
+      headers: _headers(token),
+    );
+    if (res.statusCode != 200) throw Exception(res.body);
+    return jsonDecode(res.body);
+  }
+
+  /// Update senior settings.
+  static Future<void> updateSettings(Map<String, dynamic> updates) async {
+    final token = await _getToken();
+    final res = await http.put(
+      Uri.parse('$_baseUrl/settings'),
+      headers: _headers(token),
+      body: jsonEncode(updates),
+    );
+    if (res.statusCode != 200) throw Exception(res.body);
+  }
+
+  /// Update FCM token (routed through settings endpoint).
+  static Future<void> updateFcmToken(String token) async {
+    await updateSettings({'fcmToken': token});
+  }
+
+  // ─── Contacts ─────────────────────────────────────────────────────
+
+  /// Get emergency contacts.
   static Future<Map<String, dynamic>> getContacts() async {
-    final response = await http.get(
+    final token = await _getToken();
+    final res = await http.get(
       Uri.parse('$_baseUrl/contacts'),
-      headers: await _headers(),
+      headers: _headers(token),
     );
-    return jsonDecode(response.body);
+    if (res.statusCode != 200) throw Exception(res.body);
+    return jsonDecode(res.body);
   }
 
+  /// Add a new emergency contact.
   static Future<Map<String, dynamic>> addContact({
     required String fullName,
     required String email,
     String? phone,
-    String? relationship,
+    required String relationship,
   }) async {
-    final response = await http.post(
+    final token = await _getToken();
+    final res = await http.post(
       Uri.parse('$_baseUrl/contacts'),
-      headers: await _headers(),
+      headers: _headers(token),
       body: jsonEncode({
         'fullName': fullName,
         'email': email,
@@ -109,125 +239,52 @@ class ApiService {
         'relationship': relationship,
       }),
     );
-    return jsonDecode(response.body);
+    if (res.statusCode != 201) throw Exception(res.body);
+    return jsonDecode(res.body);
   }
 
-  static Future<Map<String, dynamic>> deleteContact(String contactId) async {
-    final response = await http.delete(
+  /// Delete an emergency contact.
+  static Future<void> deleteContact(String contactId) async {
+    final token = await _getToken();
+    final res = await http.delete(
       Uri.parse('$_baseUrl/contacts/$contactId'),
-      headers: await _headers(),
+      headers: _headers(token),
     );
-    return jsonDecode(response.body);
+    if (res.statusCode != 200) throw Exception(res.body);
   }
 
-  static Future<Map<String, dynamic>> sendTestAlert(String contactId) async {
-    final response = await http.post(
-      Uri.parse('$_baseUrl/contacts/$contactId/test-alert'),
-      headers: await _headers(),
-    );
-    return jsonDecode(response.body);
-  }
+  // ─── Dashboard ────────────────────────────────────────────────────
 
-  // Check-in detail
-  static Future<Map<String, dynamic>> getCheckIn(String checkInId) async {
-    final response = await http.get(
-      Uri.parse('$_baseUrl/check-ins/$checkInId'),
-      headers: await _headers(),
-    );
-    return jsonDecode(response.body);
-  }
-
-  // Selfie upload
-  static Future<Map<String, dynamic>> getSelfieUploadUrl(String checkInId) async {
-    final response = await http.post(
-      Uri.parse('$_baseUrl/check-ins/selfie-url'),
-      headers: await _headers(),
-      body: jsonEncode({'checkInId': checkInId}),
-    );
-    return jsonDecode(response.body);
-  }
-
-  static Future<void> uploadSelfie(String uploadUrl, Uint8List imageBytes) async {
-    await http.put(
-      Uri.parse(uploadUrl),
-      headers: {'Content-Type': 'image/jpeg'},
-      body: imageBytes,
-    );
-  }
-
-  // Dashboard (caregiver)
+  /// Get 30-day check-in summary for a senior.
   static Future<Map<String, dynamic>> getDashboardSummary(String seniorId) async {
-    final response = await http.get(
+    final token = await _getToken();
+    final res = await http.get(
       Uri.parse('$_baseUrl/dashboard/$seniorId/summary'),
-      headers: await _headers(),
+      headers: _headers(token),
     );
-    return jsonDecode(response.body);
+    if (res.statusCode != 200) throw Exception(res.body);
+    return jsonDecode(res.body);
   }
 
+  /// Get streak for a senior.
   static Future<Map<String, dynamic>> getStreak(String seniorId) async {
-    final response = await http.get(
+    final token = await _getToken();
+    final res = await http.get(
       Uri.parse('$_baseUrl/dashboard/$seniorId/streak'),
-      headers: await _headers(),
+      headers: _headers(token),
     );
-    return jsonDecode(response.body);
+    if (res.statusCode != 200) throw Exception(res.body);
+    return jsonDecode(res.body);
   }
 
-  static Future<Map<String, dynamic>> getAlertHistory(String seniorId) async {
-    final response = await http.get(
+  /// Get alert history for a senior.
+  static Future<Map<String, dynamic>> getAlerts(String seniorId) async {
+    final token = await _getToken();
+    final res = await http.get(
       Uri.parse('$_baseUrl/dashboard/$seniorId/alerts'),
-      headers: await _headers(),
+      headers: _headers(token),
     );
-    return jsonDecode(response.body);
-  }
-
-  // Get user profile
-  static Future<Map<String, dynamic>> getUserProfile() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return {};
-    // We can get user role from the register endpoint response,
-    // but for role-based routing we need a profile endpoint.
-    // For now, use Firestore via the settings endpoint as a proxy:
-    // If settings exist, user is a senior. Otherwise, check via a dedicated call.
-    // Using a lightweight approach: try getSettings - if it works, user is senior.
-    try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl/settings'),
-        headers: await _headers(),
-      );
-      final data = jsonDecode(response.body);
-      if (response.statusCode == 200 && data['settings'] != null) {
-        return {'role': 'senior'};
-      }
-      return {'role': 'caregiver'};
-    } catch (_) {
-      return {'role': 'senior'};
-    }
-  }
-
-  // FCM token
-  static Future<void> updateFcmToken(String token) async {
-    await http.put(
-      Uri.parse('$_baseUrl/settings'),
-      headers: await _headers(),
-      body: jsonEncode({'fcmToken': token}),
-    );
-  }
-
-  // Settings
-  static Future<Map<String, dynamic>> getSettings() async {
-    final response = await http.get(
-      Uri.parse('$_baseUrl/settings'),
-      headers: await _headers(),
-    );
-    return jsonDecode(response.body);
-  }
-
-  static Future<Map<String, dynamic>> updateSettings(Map<String, dynamic> updates) async {
-    final response = await http.put(
-      Uri.parse('$_baseUrl/settings'),
-      headers: await _headers(),
-      body: jsonEncode(updates),
-    );
-    return jsonDecode(response.body);
+    if (res.statusCode != 200) throw Exception(res.body);
+    return jsonDecode(res.body);
   }
 }

@@ -33,9 +33,21 @@ class _CaregiverSettingsScreenState extends State<CaregiverSettingsScreen> {
   }
 
   Future<void> _loadLinkedSenior() async {
-    // TODO: Fetch linked senior info from backend once a "get linked seniors" endpoint exists.
-    // For now, we indicate whether a senior is linked based on local state.
-    setState(() => _loading = false);
+    try {
+      final result = await ApiService.getLinkedSeniors();
+      final seniors = result['seniors'] as List? ?? [];
+      if (seniors.isNotEmpty && mounted) {
+        setState(() {
+          _linkedSeniorId = seniors[0]['seniorId'];
+          _linkedSeniorName = seniors[0]['fullName'] ?? 'Linked Senior';
+          _loading = false;
+        });
+        return;
+      }
+    } catch (_) {
+      // Network error — show empty state
+    }
+    if (mounted) setState(() => _loading = false);
   }
 
   Future<void> _linkSenior() async {

@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
 import 'package:provider/provider.dart';
@@ -7,6 +8,7 @@ import '../../services/api_service.dart';
 import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/check_in_button.dart';
+import '../../main.dart';
 import 'settings_screen.dart';
 
 class SeniorHomeScreen extends StatefulWidget {
@@ -46,6 +48,18 @@ class _SeniorHomeScreenState extends State<SeniorHomeScreen> {
       final checkInResult = results[0];
       final settingsResult = results[1];
 
+      // Fetch streak from API (using own UID)
+      int streak = 0;
+      try {
+        final uid = BYPASS_FIREBASE ? 'demo_uid' : FirebaseAuth.instance.currentUser?.uid;
+        if (uid != null) {
+          final streakResult = await ApiService.getStreak(uid);
+          streak = streakResult['streak'] ?? 0;
+        }
+      } catch (_) {
+        // Streak is non-critical — continue without it
+      }
+
       setState(() {
         _checkedIn = checkInResult['checkedIn'] == true;
         if (_checkedIn && checkInResult['checkIn'] != null) {
@@ -54,6 +68,7 @@ class _SeniorHomeScreenState extends State<SeniorHomeScreen> {
           _selfieUploaded = checkInResult['checkIn']['selfiePath'] != null;
         }
         _selfieEnabled = settingsResult['settings']?['selfieEnabled'] == true;
+        _streak = streak;
         _loading = false;
       });
     } catch (e) {
@@ -78,7 +93,7 @@ class _SeniorHomeScreenState extends State<SeniorHomeScreen> {
         _submitting = false;
         _checkInTime = _formatTime(DateTime.now().toIso8601String());
         _lastCheckInId = checkIn?['id'];
-        _streak++;
+        _streak = _streak + 1;
       });
 
       if (mounted) {
@@ -189,9 +204,13 @@ class _SeniorHomeScreenState extends State<SeniorHomeScreen> {
       // Get presigned upload URL
       final urlResult = await ApiService.getSelfieUploadUrl(_lastCheckInId!);
       final uploadUrl = urlResult['uploadUrl'] as String;
+      final selfiePath = urlResult['selfiePath'] as String;
 
       // Upload
       await ApiService.uploadSelfie(uploadUrl, jpegBytes);
+
+      // Confirm upload — this sets hasSelfie on the check-in record
+      await ApiService.confirmSelfie(_lastCheckInId!, selfiePath);
 
       setState(() {
         _uploadingSelfie = false;

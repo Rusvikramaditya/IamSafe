@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/status_helpers.dart';
 
 class CheckInDetailScreen extends StatefulWidget {
   final String seniorId;
   final String date;
   final String status;
   final String? checkedInAt;
+  final String? checkInId;
 
   const CheckInDetailScreen({
     super.key,
@@ -14,6 +16,7 @@ class CheckInDetailScreen extends StatefulWidget {
     required this.date,
     required this.status,
     this.checkedInAt,
+    this.checkInId,
   });
 
   @override
@@ -23,75 +26,39 @@ class CheckInDetailScreen extends StatefulWidget {
 class _CheckInDetailScreenState extends State<CheckInDetailScreen> {
   bool _loading = false;
   String? _error;
-  String? _checkInId;
   String? _selfieUrl;
   bool _hasSelfie = false;
 
   @override
   void initState() {
     super.initState();
-    // Try to find the check-in ID by querying the history
-    _searchCheckIn();
-  }
-
-  Future<void> _searchCheckIn() async {
-    setState(() => _loading = true);
-    try {
-      final history = await ApiService.getCheckInHistory(limit: 90);
-      final checkIns = history['checkIns'] as List? ?? [];
-
-      // Find check-in matching this date
-      final matching = checkIns.firstWhere(
-        (c) => c['checkInDate'] == widget.date,
-        orElse: () => null,
-      );
-
-      if (matching != null) {
-        setState(() => _checkInId = matching['id']);
-        // Load full check-in with signed selfie URL
-        await _loadCheckInDetail(matching['id']);
-      } else {
-        setState(() => _loading = false);
-      }
-    } catch (e) {
-      setState(() {
-        _loading = false;
-        _error = 'Could not load check-in details.';
-      });
+    if (widget.checkInId != null) {
+      _loadCheckInDetail(widget.checkInId!);
     }
   }
 
   Future<void> _loadCheckInDetail(String checkInId) async {
+    setState(() => _loading = true);
     try {
       final result = await ApiService.getCheckIn(checkInId);
       final checkIn = result['checkIn'] as Map?;
 
-      if (checkIn != null) {
+      if (checkIn != null && mounted) {
         setState(() {
-          _checkInId = checkInId;
           _selfieUrl = checkIn['selfieUrl'] as String?;
           _hasSelfie = checkIn['hasSelfie'] == true;
           _loading = false;
         });
+      } else {
+        setState(() => _loading = false);
       }
     } catch (e) {
-      setState(() {
-        _loading = false;
-        _error = 'Could not load selfie. It may be expired.';
-      });
-    }
-  }
-
-  String _statusLabel(String status) {
-    switch (status) {
-      case 'on_time':
-        return 'Checked in on time';
-      case 'late':
-        return 'Checked in late';
-      case 'missed':
-        return 'Missed check-in';
-      default:
-        return 'Unknown status';
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = 'Could not load selfie. It may be expired.';
+        });
+      }
     }
   }
 
@@ -112,7 +79,7 @@ class _CheckInDetailScreenState extends State<CheckInDetailScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Check-in Details'),
+        title: const Text('Check-in Details'),
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
@@ -127,13 +94,13 @@ class _CheckInDetailScreenState extends State<CheckInDetailScreen> {
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: _statusColor(widget.status),
+                      color: StatusHelpers.statusColor(widget.status),
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Row(
                       children: [
                         Icon(
-                          _statusIcon(widget.status),
+                          StatusHelpers.statusIcon(widget.status),
                           color: Colors.white,
                           size: 40,
                         ),
@@ -152,7 +119,7 @@ class _CheckInDetailScreenState extends State<CheckInDetailScreen> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                _statusLabel(widget.status),
+                                StatusHelpers.statusLabel(widget.status),
                                 style: const TextStyle(
                                   fontSize: 16,
                                   color: Colors.white,
@@ -338,31 +305,5 @@ class _CheckInDetailScreenState extends State<CheckInDetailScreen> {
               ),
             ),
     );
-  }
-
-  Color _statusColor(String status) {
-    switch (status) {
-      case 'on_time':
-        return AppTheme.safeGreen;
-      case 'late':
-        return AppTheme.warningYellow;
-      case 'missed':
-        return AppTheme.alertRed;
-      default:
-        return Colors.grey[400]!;
-    }
-  }
-
-  IconData _statusIcon(String status) {
-    switch (status) {
-      case 'on_time':
-        return Icons.check_circle;
-      case 'late':
-        return Icons.access_time;
-      case 'missed':
-        return Icons.cancel;
-      default:
-        return Icons.circle_outlined;
-    }
   }
 }
