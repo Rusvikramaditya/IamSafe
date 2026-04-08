@@ -3,6 +3,7 @@ import { db } from '../config/firebase';
 import { authMiddleware, AuthRequest } from '../middleware/authMiddleware';
 import { generalLimiter } from '../middleware/rateLimiter';
 import { todayInTimezone } from '../config/timezone';
+import { logger } from '../lib/logger';
 
 export const dashboardRoutes = Router();
 
@@ -61,7 +62,7 @@ dashboardRoutes.get('/:seniorId/summary', generalLimiter, authMiddleware, async 
 
     res.json({ days, timezone });
   } catch (err: unknown) {
-    console.error('Dashboard summary error:', err);
+    logger.error('Dashboard summary error', { error: String(err) });
     res.status(500).json({ error: 'Failed to get dashboard summary' });
   }
 });
@@ -112,7 +113,7 @@ dashboardRoutes.get('/:seniorId/streak', generalLimiter, authMiddleware, async (
 
     res.json({ streak });
   } catch (err: unknown) {
-    console.error('Streak error:', err);
+    logger.error('Streak error', { error: String(err) });
     res.status(500).json({ error: 'Failed to get streak' });
   }
 });
@@ -141,7 +142,7 @@ dashboardRoutes.get('/:seniorId/alerts', generalLimiter, authMiddleware, async (
 
     res.json({ alerts });
   } catch (err: unknown) {
-    console.error('Alert history error:', err);
+    logger.error('Alert history error', { error: String(err) });
     res.status(500).json({ error: 'Failed to get alert history' });
   }
 });

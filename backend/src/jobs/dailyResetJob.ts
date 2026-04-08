@@ -1,5 +1,6 @@
 import { db } from '../config/firebase';
 import { todayInTimezone } from '../config/timezone';
+import { logger } from '../lib/logger';
 
 export async function dailyResetJob(): Promise<{ reset: number }> {
   // Reset alertSentToday for all seniors whose alertSentToday is true
@@ -43,6 +44,6 @@ export async function dailyResetJob(): Promise<{ reset: number }> {
     await batch.commit();
   }
 
-  console.log(`dailyResetJob: reset ${resetCount} seniors`);
+  logger.info('dailyResetJob complete', { reset: resetCount });
   return { reset: resetCount };
 }

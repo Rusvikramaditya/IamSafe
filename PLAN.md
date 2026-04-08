@@ -276,9 +276,9 @@ Revenue after store cuts (~15%): Premium = ~$4.24/mo, Family = ~$8.49/mo.
 ## Progress
 
 ### Phase 1 — Core check-in + email alert
-- [ ] Firebase project setup (Firestore + Auth + Storage, region: `us-central1`)
-- [x] Cloud Run backend + Firebase Admin SDK + Dockerfile
-- [ ] Google Cloud Scheduler jobs configured
+- [x] Firebase project setup (Firestore + Auth + Storage, region: `us-central1`) — project: iamsafe-345f1
+- [x] Cloud Run backend + Firebase Admin SDK + Dockerfile — deployed: https://iamsafe-backend-234672413118.us-central1.run.app
+- [x] Google Cloud Scheduler jobs configured (missed-checkin, reminders, daily-reset — every 15 min)
 - [x] `POST /api/v1/check-ins` + contacts + settings endpoints
 - [x] `missedCheckInJob` + Resend email alerts
 - [x] `dailyResetJob`
@@ -314,6 +314,11 @@ Revenue after store cuts (~15%): Premium = ~$4.24/mo, Family = ~$8.49/mo.
 - [x] Timezone-aware jobs via dayjs (IANA timezone, not Date.now())
 - [x] BYPASS_FIREBASE via --dart-define (defaults false in prod)
 - [x] flutter_timezone for IANA timezone detection on device
+- [x] Structured JSON logging (Cloud Logging compatible) — `src/lib/logger.ts`
+- [x] Production deploy to Cloud Run (revision 00002, us-central1)
+- [x] Cloud Scheduler configured — 3 jobs firing every 15 min
+- [x] JOB_API_KEY auth on job endpoints
+- [ ] E2E test: miss window → email received ✓ (pending device/emulator)
 
 ### Phase 4 — Store submission
 - [ ] App Store Connect account + IAP products configured

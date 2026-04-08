@@ -4,6 +4,7 @@ import { authMiddleware, AuthRequest } from '../middleware/authMiddleware';
 import { checkInLimiter, generalLimiter } from '../middleware/rateLimiter';
 import { todayInTimezone, nowInTimezone } from '../config/timezone';
 import { v4 as uuidv4 } from 'uuid';
+import { logger } from '../lib/logger';
 
 export const checkInRoutes = Router();
 
@@ -62,7 +63,7 @@ checkInRoutes.post('/', checkInLimiter, authMiddleware, async (req: AuthRequest,
       },
     });
   } catch (err: unknown) {
-    console.error('Check-in error:', err);
+    logger.error('Check-in error', { error: String(err) });
     res.status(500).json({ error: 'Check-in failed' });
   }
 });
@@ -98,7 +99,7 @@ checkInRoutes.get('/today', generalLimiter, authMiddleware, async (req: AuthRequ
       },
     });
   } catch (err: unknown) {
-    console.error('Get today check-in error:', err);
+    logger.error('Get today check-in error', { error: String(err) });
     res.status(500).json({ error: 'Failed to get status' });
   }
 });
@@ -123,7 +124,7 @@ checkInRoutes.get('/history', generalLimiter, authMiddleware, async (req: AuthRe
 
     res.json({ checkIns });
   } catch (err: unknown) {
-    console.error('Get history error:', err);
+    logger.error('Get history error', { error: String(err) });
     res.status(500).json({ error: 'Failed to get history' });
   }
 });
@@ -176,7 +177,7 @@ checkInRoutes.get('/:checkInId', generalLimiter, authMiddleware, async (req: Aut
       },
     });
   } catch (err: unknown) {
-    console.error('Get check-in error:', err);
+    logger.error('Get check-in error', { error: String(err) });
     res.status(500).json({ error: 'Failed to get check-in' });
   }
 });
@@ -205,7 +206,7 @@ checkInRoutes.post('/:checkInId/selfie-url', generalLimiter, authMiddleware, asy
     // Do NOT set selfiePath yet — wait for upload confirmation
     res.json({ uploadUrl, selfiePath });
   } catch (err: unknown) {
-    console.error('Get selfie URL error:', err);
+    logger.error('Get selfie URL error', { error: String(err) });
     res.status(500).json({ error: 'Failed to generate upload URL' });
   }
 });
@@ -249,7 +250,7 @@ checkInRoutes.post('/:checkInId/selfie-confirm', generalLimiter, authMiddleware,
       res.status(403).json({ error: 'Not authorized' });
       return;
     }
-    console.error('Confirm selfie error:', err);
+    logger.error('Confirm selfie error', { error: String(err) });
     res.status(500).json({ error: 'Failed to confirm selfie' });
   }
 });

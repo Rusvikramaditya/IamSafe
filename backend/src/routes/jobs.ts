@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { missedCheckInJob } from '../jobs/missedCheckInJob';
 import { dailyResetJob } from '../jobs/dailyResetJob';
 import { reminderJob } from '../jobs/reminderJob';
+import { logger } from '../lib/logger';
 
 export const jobRoutes = Router();
 
@@ -15,7 +16,7 @@ function verifyJobAuth(req: Request, res: Response): boolean {
   if (!expectedKey) {
     // No key set — allow in dev, block in production
     if (process.env.NODE_ENV === 'production') {
-      console.error('JOB_API_KEY not set in production — blocking job request');
+      logger.error('JOB_API_KEY not set in production — blocking job request');
       res.status(401).json({ error: 'Unauthorized' });
       return false;
     }
@@ -38,7 +39,7 @@ jobRoutes.post('/missed-checkin', async (req: Request, res: Response) => {
     res.json({ success: true, ...result });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
-    console.error('missedCheckInJob failed:', msg);
+    logger.error('missedCheckInJob failed', { error: msg });
     res.status(500).json({ error: 'Job failed' });
   }
 });
@@ -51,7 +52,7 @@ jobRoutes.post('/daily-reset', async (req: Request, res: Response) => {
     res.json({ success: true, ...result });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
-    console.error('dailyResetJob failed:', msg);
+    logger.error('dailyResetJob failed', { error: msg });
     res.status(500).json({ error: 'Job failed' });
   }
 });
@@ -64,7 +65,7 @@ jobRoutes.post('/reminders', async (req: Request, res: Response) => {
     res.json({ success: true, ...result });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
-    console.error('reminderJob failed:', msg);
+    logger.error('reminderJob failed', { error: msg });
     res.status(500).json({ error: 'Job failed' });
   }
 });

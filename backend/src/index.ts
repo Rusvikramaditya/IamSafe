@@ -9,12 +9,13 @@ import { settingsRoutes } from './routes/settings';
 import { dashboardRoutes } from './routes/dashboard';
 import { webhookRoutes } from './routes/webhooks';
 import { jobRoutes } from './routes/jobs';
+import { logger } from './lib/logger';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '8080', 10);
 
-// Trust proxy — required for Cloud Run so rate limiter uses real client IP
-app.set('trust proxy', true);
+// Trust proxy — Cloud Run sits behind 1 Google proxy layer
+app.set('trust proxy', 1);
 
 app.use(helmet());
 
@@ -54,19 +55,19 @@ app.use('/api/v1/jobs', jobRoutes);
 
 // Global error handler — catches unhandled async errors
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  console.error('Unhandled error:', err.message);
+  logger.error('Unhandled error', { error: err.message });
   res.status(500).json({ error: 'Internal server error' });
 });
 
 const server = app.listen(PORT, () => {
-  console.log(`IamSafe backend running on port ${PORT}`);
+  logger.info(`IamSafe backend running on port ${PORT}`);
 });
 
 // Graceful shutdown for Cloud Run SIGTERM
 process.on('SIGTERM', () => {
-  console.log('SIGTERM received — shutting down gracefully');
+  logger.info('SIGTERM received — shutting down gracefully');
   server.close(() => {
-    console.log('Server closed');
+    logger.info('Server closed');
     process.exit(0);
   });
 });

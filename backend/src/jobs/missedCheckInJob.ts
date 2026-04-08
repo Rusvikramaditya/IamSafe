@@ -1,6 +1,7 @@
 import { db } from '../config/firebase';
 import { nowInTimezone, todayInTimezone } from '../config/timezone';
 import { AlertService, AlertContact } from '../services/AlertService';
+import { logger } from '../lib/logger';
 
 export async function missedCheckInJob(): Promise<{ processed: number; alerts: number }> {
   let processed = 0;
@@ -116,11 +117,11 @@ export async function missedCheckInJob(): Promise<{ processed: number; alerts: n
       await batch.commit();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(`missedCheckInJob: error processing senior ${settingsDoc.id}:`, msg);
+      logger.error('missedCheckInJob: error processing senior', { seniorId: settingsDoc.id, error: msg });
       // Continue processing remaining seniors
     }
   }
 
-  console.log(`missedCheckInJob: processed ${processed} seniors, sent ${alertCount} alerts`);
+  logger.info('missedCheckInJob complete', { processed, alerts: alertCount });
   return { processed, alerts: alertCount };
 }

@@ -3,6 +3,7 @@ import { db } from '../config/firebase';
 import { authMiddleware, AuthRequest } from '../middleware/authMiddleware';
 import { generalLimiter } from '../middleware/rateLimiter';
 import { AlertService, AlertContact } from '../services/AlertService';
+import { logger } from '../lib/logger';
 
 export const contactRoutes = Router();
 
@@ -26,7 +27,7 @@ contactRoutes.get('/', generalLimiter, authMiddleware, async (req: AuthRequest, 
 
     res.json({ contacts });
   } catch (err: unknown) {
-    console.error('Get contacts error:', err);
+    logger.error('Get contacts error', { error: String(err) });
     res.status(500).json({ error: 'Failed to get contacts' });
   }
 });
@@ -84,7 +85,7 @@ contactRoutes.post('/', generalLimiter, authMiddleware, async (req: AuthRequest,
       contact: { id: contactRef.id, fullName, email },
     });
   } catch (err: unknown) {
-    console.error('Add contact error:', err);
+    logger.error('Add contact error', { error: String(err) });
     res.status(500).json({ error: 'Failed to add contact' });
   }
 });
@@ -103,7 +104,7 @@ contactRoutes.delete('/:contactId', generalLimiter, authMiddleware, async (req: 
     await doc.ref.delete();
     res.json({ message: 'Contact deleted' });
   } catch (err: unknown) {
-    console.error('Delete contact error:', err);
+    logger.error('Delete contact error', { error: String(err) });
     res.status(500).json({ error: 'Failed to delete contact' });
   }
 });
@@ -135,7 +136,7 @@ contactRoutes.post('/:contactId/test-alert', generalLimiter, authMiddleware, asy
     const result = await AlertService.sendMissedCheckInEmail(alertContact, seniorName);
     res.json({ message: 'Test alert sent', result });
   } catch (err: unknown) {
-    console.error('Test alert error:', err);
+    logger.error('Test alert error', { error: String(err) });
     res.status(500).json({ error: 'Failed to send test alert' });
   }
 });
@@ -165,7 +166,7 @@ contactRoutes.get('/:contactId/unsubscribe', async (req, res) => {
         </html>
       `);
   } catch (err: unknown) {
-    console.error('Unsubscribe error:', err);
+    logger.error('Unsubscribe error', { error: String(err) });
     res.status(500).send('<h1>Something went wrong</h1>');
   }
 });

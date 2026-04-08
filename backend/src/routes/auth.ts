@@ -4,6 +4,7 @@ import { authMiddleware, AuthRequest } from '../middleware/authMiddleware';
 import { authLimiter, generalLimiter } from '../middleware/rateLimiter';
 import { isValidTimezone } from '../config/timezone';
 import { v4 as uuidv4 } from 'uuid';
+import { logger } from '../lib/logger';
 
 export const authRoutes = Router();
 
@@ -40,7 +41,7 @@ authRoutes.get('/profile', authMiddleware, async (req: AuthRequest, res) => {
       createdAt: data.createdAt,
     });
   } catch (err: unknown) {
-    console.error('Get profile error:', err);
+    logger.error('Get profile error', { error: String(err) });
     res.status(500).json({ error: 'Failed to get profile' });
   }
 });
@@ -108,7 +109,7 @@ authRoutes.post('/register', authLimiter, authMiddleware, async (req: AuthReques
 
     res.status(201).json({ message: 'User registered', uid });
   } catch (err: unknown) {
-    console.error('Register error:', err);
+    logger.error('Register error', { error: String(err) });
     res.status(500).json({ error: 'Registration failed' });
   }
 });
@@ -138,7 +139,7 @@ authRoutes.get('/linked-seniors', authMiddleware, async (req: AuthRequest, res) 
 
     res.json({ seniors });
   } catch (err: unknown) {
-    console.error('Get linked seniors error:', err);
+    logger.error('Get linked seniors error', { error: String(err) });
     res.status(500).json({ error: 'Failed to get linked seniors' });
   }
 });
@@ -185,7 +186,7 @@ authRoutes.post('/link-senior', generalLimiter, authMiddleware, async (req: Auth
 
     res.json({ message: 'Linked to senior', seniorId: linkData.seniorId, seniorName });
   } catch (err: unknown) {
-    console.error('Link senior error:', err);
+    logger.error('Link senior error', { error: String(err) });
     res.status(500).json({ error: 'Linking failed' });
   }
 });
@@ -214,7 +215,7 @@ authRoutes.post('/generate-invite', generalLimiter, authMiddleware, async (req: 
 
     res.status(201).json({ inviteCode, linkId: linkRef.id, expiresAt: inviteExpires.toISOString() });
   } catch (err: unknown) {
-    console.error('Generate invite error:', err);
+    logger.error('Generate invite error', { error: String(err) });
     res.status(500).json({ error: 'Failed to generate invite' });
   }
 });

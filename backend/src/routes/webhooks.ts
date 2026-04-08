@@ -3,6 +3,7 @@ import twilio from 'twilio';
 import crypto from 'crypto';
 import { db } from '../config/firebase';
 import { webhookLimiter } from '../middleware/rateLimiter';
+import { logger } from '../lib/logger';
 
 export const webhookRoutes = Router();
 
@@ -12,7 +13,7 @@ export const webhookRoutes = Router();
 function verifyRevenueCatSignature(req: Request): boolean {
   const secret = process.env.REVENUECAT_WEBHOOK_SECRET;
   if (!secret) {
-    console.warn('REVENUECAT_WEBHOOK_SECRET not set — skipping signature check (unsafe in production)');
+    logger.warn('REVENUECAT_WEBHOOK_SECRET not set — skipping signature check (unsafe in production)');
     return process.env.NODE_ENV !== 'production';
   }
   const authHeader = req.headers['authorization'];
@@ -24,7 +25,7 @@ function verifyTwilioSignature(req: Request): boolean {
   const twilioSignature = req.headers['x-twilio-signature'] as string;
   const authToken = process.env.TWILIO_AUTH_TOKEN;
   if (!twilioSignature || !authToken) {
-    console.warn('Twilio signature or auth token missing');
+    logger.warn('Twilio signature or auth token missing');
     return process.env.NODE_ENV !== 'production';
   }
   const url = `${process.env.PUBLIC_API_URL || ''}/api/v1/webhooks/twilio`;
@@ -36,7 +37,7 @@ function verifyResendSignature(req: Request): boolean {
   const secret = process.env.RESEND_WEBHOOK_SECRET;
   const signature = req.headers['resend-signature'] as string;
   if (!secret || !signature) {
-    console.warn('Resend webhook secret or signature missing');
+    logger.warn('Resend webhook secret or signature missing');
     return process.env.NODE_ENV !== 'production';
   }
   const rawBody = JSON.stringify(req.body);
@@ -91,7 +92,7 @@ webhookRoutes.post('/revenuecat', webhookLimiter, async (req: Request, res: Resp
           entitlements: [entitlement],
         });
       } else {
-        console.warn(`Unknown product ID: ${productId}`);
+        logger.warn('Unknown product ID in RevenueCat webhook', { productId });
       }
     } else if (
       eventType === 'CANCELLATION' ||
@@ -106,7 +107,7 @@ webhookRoutes.post('/revenuecat', webhookLimiter, async (req: Request, res: Resp
     res.json({ received: true });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error('RevenueCat webhook error:', msg);
+    logger.error('RevenueCat webhook error', { error: msg });
     res.status(500).json({ error: 'Webhook processing failed' });
   }
 });
@@ -137,7 +138,7 @@ webhookRoutes.post('/twilio', webhookLimiter, async (req: Request, res: Response
     res.set('Content-Type', 'text/xml').status(200).send('<Response></Response>');
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error('Twilio webhook error:', msg);
+    logger.error('Twilio webhook error', { error: msg });
     res.set('Content-Type', 'text/xml').status(200).send('<Response></Response>');
   }
 });
@@ -171,7 +172,7 @@ webhookRoutes.post('/resend', webhookLimiter, async (req: Request, res: Response
     res.json({ received: true });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error('Resend webhook error:', msg);
+    logger.error('Resend webhook error', { error: msg });
     res.status(500).json({ error: 'Webhook processing failed' });
   }
 });

@@ -1,5 +1,6 @@
 import { db, messaging } from '../config/firebase';
 import { nowInTimezone, todayInTimezone } from '../config/timezone';
+import { logger } from '../lib/logger';
 
 export async function reminderJob(): Promise<{ sent: number }> {
   let sent = 0;
@@ -72,14 +73,14 @@ export async function reminderJob(): Promise<{ sent: number }> {
         if (error.code === 'messaging/registration-token-not-registered') {
           await db.collection('users').doc(seniorId).update({ fcmToken: null });
         }
-        console.error(`FCM send failed for ${seniorId}:`, error.message);
+        logger.error('FCM send failed', { seniorId, error: error.message });
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(`reminderJob: error processing senior ${settingsDoc.id}:`, msg);
+      logger.error('reminderJob: error processing senior', { seniorId: settingsDoc.id, error: msg });
     }
   }
 
-  console.log(`reminderJob: sent ${sent} reminders`);
+  logger.info('reminderJob complete', { sent });
   return { sent };
 }

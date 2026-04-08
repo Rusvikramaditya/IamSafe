@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../config/firebase';
 import { authMiddleware, AuthRequest } from '../middleware/authMiddleware';
 import { generalLimiter } from '../middleware/rateLimiter';
+import { logger } from '../lib/logger';
 
 export const settingsRoutes = Router();
 
@@ -24,7 +25,7 @@ settingsRoutes.get('/', generalLimiter, authMiddleware, async (req: AuthRequest,
     }
     res.json({ settings: doc.data() });
   } catch (err: unknown) {
-    console.error('Get settings error:', err);
+    logger.error('Get settings error', { error: String(err) });
     res.status(500).json({ error: 'Failed to get settings' });
   }
 });
@@ -76,7 +77,7 @@ settingsRoutes.put('/', generalLimiter, authMiddleware, async (req: AuthRequest,
 
     res.json({ message: 'Settings updated' });
   } catch (err: unknown) {
-    console.error('Update settings error:', err);
+    logger.error('Update settings error', { error: String(err) });
     res.status(500).json({ error: 'Failed to update settings' });
   }
 });
