@@ -320,12 +320,18 @@ Revenue after store cuts (~15%): Premium = ~$4.24/mo, Family = ~$8.49/mo.
 - [x] JOB_API_KEY auth on job endpoints
 - [ ] E2E test: miss window → email received ✓ (pending device/emulator)
 
+### Pre-Phase 4 — Pending before store submission
+- [ ] E2E test: `flutter run --dart-define=API_BASE_URL=https://iamsafe-backend-234672413118.us-central1.run.app/api/v1` → miss window → email received
+- [ ] Deploy Firestore security rules (`firestore.rules`) via `firebase deploy --only firestore:rules`
+- [ ] Set `PUBLIC_API_URL` env var on Cloud Run (needed for Twilio webhook signature verification)
+
 ### Phase 4 — Store submission
 - [ ] App Store Connect account + IAP products configured
 - [ ] Google Play Console account + subscriptions configured
 - [ ] RevenueCat products linked to both stores
 - [x] Privacy policy + terms of service pages
 - [x] App Store privacy nutrition label
+- [ ] App icon + splash screen assets
 - [ ] TestFlight beta testing
 - [ ] Google Play internal testing track
 - [ ] App Store submission + review
