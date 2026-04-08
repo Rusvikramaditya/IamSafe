@@ -13,57 +13,58 @@ checkInRoutes.post('/', checkInLimiter, authMiddleware, async (req: AuthRequest,
   try {
     const seniorId = req.uid!;
 
-    // Get senior's timezone
-    const userDoc = await db.collection('users').doc(seniorId).get();
+    // Fetch user + settings outside the transaction (reads only, no contention)
+    const [userDoc, settingsDoc] = await Promise.all([
+      db.collection('users').doc(seniorId).get(),
+      db.collection('seniorSettings').doc(seniorId).get(),
+    ]);
+
     if (!userDoc.exists) {
       res.status(404).json({ error: 'User not found' });
       return;
     }
+
     const timezone = userDoc.data()?.timezone || 'America/New_York';
     const today = todayInTimezone(timezone);
-
-    // Check for duplicate
-    const existing = await db
-      .collection('checkIns')
-      .where('seniorId', '==', seniorId)
-      .where('checkInDate', '==', today)
-      .where('status', '!=', 'missed') // Allow check-in even if missed record exists
-      .limit(1)
-      .get();
-
-    if (!existing.empty) {
-      res.status(409).json({ error: 'Already checked in today', checkIn: { id: existing.docs[0].id, ...existing.docs[0].data() } });
-      return;
-    }
-
-    // Determine status based on window
-    const settings = await db.collection('seniorSettings').doc(seniorId).get();
-    const settingsData = settings.data() || {};
+    const settingsData = settingsDoc.data() || {};
     const [endH, endM] = (settingsData.windowEnd || '10:00').split(':').map(Number);
     const nowTz = nowInTimezone(timezone);
     const windowEnd = nowTz.hour(endH).minute(endM).second(0).millisecond(0);
     const status = nowTz.isAfter(windowEnd) ? 'late' : 'on_time';
+    const checkedInAt = new Date().toISOString();
 
-    const checkInRef = await db.collection('checkIns').add({
-      seniorId,
-      checkInDate: today,
-      checkedInAt: new Date().toISOString(),
-      status,
-      selfiePath: null,
-      hasSelfie: false,
+    // Deterministic doc ID = {seniorId}_{date} — Firestore create() is atomic,
+    // so concurrent double-taps both attempt to create the same doc and one wins.
+    const checkInId = `${seniorId}_${today}`;
+    const checkInRef = db.collection('checkIns').doc(checkInId);
+
+    await db.runTransaction(async (txn) => {
+      const existing = await txn.get(checkInRef);
+      if (existing.exists && existing.data()?.status !== 'missed') {
+        throw Object.assign(new Error('DUPLICATE'), { data: existing.data() });
+      }
+      txn.set(checkInRef, {
+        seniorId,
+        checkInDate: today,
+        checkedInAt,
+        status,
+        selfiePath: null,
+        hasSelfie: false,
+      });
     });
 
     res.status(201).json({
       message: 'Check-in recorded',
-      checkIn: {
-        id: checkInRef.id,
-        checkInDate: today,
-        checkedInAt: new Date().toISOString(),
-        status,
-      },
+      checkIn: { id: checkInId, checkInDate: today, checkedInAt, status },
     });
   } catch (err: unknown) {
-    logger.error('Check-in error', { error: String(err) });
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg === 'DUPLICATE') {
+      const data = (err as any).data || {};
+      res.status(409).json({ error: 'Already checked in today', checkIn: { id: `${req.uid!}_${data.checkInDate}`, ...data } });
+      return;
+    }
+    logger.error('Check-in error', { error: msg });
     res.status(500).json({ error: 'Check-in failed' });
   }
 });

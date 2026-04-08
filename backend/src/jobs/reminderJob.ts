@@ -47,6 +47,9 @@ export async function reminderJob(): Promise<{ sent: number }> {
 
       if (!checkInSnap.empty) continue;
 
+      // Mark as sent BEFORE sending — prevents duplicate reminders if send throws
+      await settingsDoc.ref.update({ reminderSentToday: true });
+
       // Send FCM push reminder
       try {
         await messaging.send({
@@ -63,9 +66,6 @@ export async function reminderJob(): Promise<{ sent: number }> {
             payload: { aps: { sound: 'default', badge: 1 } },
           },
         });
-
-        // Mark reminder as sent to prevent duplicates
-        await settingsDoc.ref.update({ reminderSentToday: true });
         sent++;
       } catch (err: unknown) {
         const error = err as { code?: string; message?: string };

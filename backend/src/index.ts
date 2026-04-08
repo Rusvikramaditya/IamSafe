@@ -11,6 +11,16 @@ import { webhookRoutes } from './routes/webhooks';
 import { jobRoutes } from './routes/jobs';
 import { logger } from './lib/logger';
 
+// Fail fast on missing required production secrets
+if (process.env.NODE_ENV === 'production') {
+  const required = ['REVENUECAT_WEBHOOK_SECRET', 'JOB_API_KEY', 'RESEND_API_KEY'];
+  const missing = required.filter((k) => !process.env[k]);
+  if (missing.length > 0) {
+    console.error(`FATAL: Missing required env vars: ${missing.join(', ')}`);
+    process.exit(1);
+  }
+}
+
 const app = express();
 const PORT = parseInt(process.env.PORT || '8080', 10);
 

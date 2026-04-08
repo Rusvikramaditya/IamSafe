@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { db } from '../config/firebase';
 import { authMiddleware, AuthRequest } from '../middleware/authMiddleware';
 import { generalLimiter } from '../middleware/rateLimiter';
-import { todayInTimezone } from '../config/timezone';
+import { todayInTimezone, dayjs } from '../config/timezone';
 import { logger } from '../lib/logger';
 
 export const dashboardRoutes = Router();
@@ -95,7 +95,6 @@ dashboardRoutes.get('/:seniorId/streak', generalLimiter, authMiddleware, async (
     }
 
     // Calculate streak using timezone-correct dates
-    const { dayjs } = await import('../config/timezone');
     let streak = 0;
     let expectedDate = dayjs().tz(timezone).startOf('day');
 

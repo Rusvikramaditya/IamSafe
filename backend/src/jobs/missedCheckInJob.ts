@@ -47,14 +47,16 @@ export async function missedCheckInJob(): Promise<{ processed: number; alerts: n
 
       processed++;
 
-      // Create a missed check-in record
-      const checkInRef = await db.collection('checkIns').add({
+      // Create a missed check-in record with deterministic ID (same scheme as submit endpoint)
+      const checkInRef = db.collection('checkIns').doc(`${seniorId}_${today}`);
+      await checkInRef.set({
         seniorId,
         checkInDate: today,
         checkedInAt: null,
         status: 'missed',
         selfiePath: null,
-      });
+        hasSelfie: false,
+      }, { merge: false });
 
       // Get contacts to alert
       const contactsSnap = await db
@@ -112,8 +114,10 @@ export async function missedCheckInJob(): Promise<{ processed: number; alerts: n
         }
       }
 
-      // Mark alert as sent for today + commit all alert logs atomically
-      batch.update(settingsDoc.ref, { alertSentToday: true });
+      // Mark alertSentToday FIRST — prevents re-alerting if batch commit fails mid-way
+      await settingsDoc.ref.update({ alertSentToday: true });
+
+      // Commit alert log entries
       await batch.commit();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);

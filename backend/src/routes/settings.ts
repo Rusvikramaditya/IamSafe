@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../config/firebase';
 import { authMiddleware, AuthRequest } from '../middleware/authMiddleware';
 import { generalLimiter } from '../middleware/rateLimiter';
+import { isValidTimezone } from '../config/timezone';
 import { logger } from '../lib/logger';
 
 export const settingsRoutes = Router();
@@ -38,7 +39,8 @@ settingsRoutes.put('/', generalLimiter, authMiddleware, async (req: AuthRequest,
       'windowEnd',
       'selfieEnabled',
       'reminderMinutes',
-      'fcmToken', // Fixed: was missing from allowed list
+      'timezone',
+      'fcmToken',
     ];
     const updates: Record<string, unknown> = {};
 
@@ -58,17 +60,22 @@ settingsRoutes.put('/', generalLimiter, authMiddleware, async (req: AuthRequest,
       return;
     }
 
+    if (updates.timezone && !isValidTimezone(updates.timezone as string)) {
+      res.status(400).json({ error: 'Invalid timezone. Use IANA format (e.g. America/New_York)' });
+      return;
+    }
+
     if (Object.keys(updates).length === 0) {
       res.status(400).json({ error: 'No valid fields to update' });
       return;
     }
 
-    // If fcmToken is being updated, store it on the user doc (not settings)
-    if (updates.fcmToken !== undefined) {
-      await db.collection('users').doc(req.uid!).update({
-        fcmToken: updates.fcmToken,
-      });
-      delete updates.fcmToken;
+    // fcmToken and timezone live on the user doc, not settings
+    const userUpdates: Record<string, unknown> = {};
+    if (updates.fcmToken !== undefined) { userUpdates.fcmToken = updates.fcmToken; delete updates.fcmToken; }
+    if (updates.timezone !== undefined) { userUpdates.timezone = updates.timezone; delete updates.timezone; }
+    if (Object.keys(userUpdates).length > 0) {
+      await db.collection('users').doc(req.uid!).update(userUpdates);
     }
 
     if (Object.keys(updates).length > 0) {

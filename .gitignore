@@ -28,6 +28,7 @@ desktop.ini
 *.keystore
 *.jks
 service-account.json
+serviceAccountKey.json
 google-services.json
 GoogleService-Info.plist
 
