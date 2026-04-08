@@ -320,22 +320,49 @@ Revenue after store cuts (~15%): Premium = ~$4.24/mo, Family = ~$8.49/mo.
 - [x] JOB_API_KEY auth on job endpoints
 - [ ] E2E test: miss window → email received ✓ (pending device/emulator)
 
-### Pre-Phase 4 — Pending before store submission
-- [ ] E2E test: `flutter run --dart-define=API_BASE_URL=https://iamsafe-backend-234672413118.us-central1.run.app/api/v1` → miss window → email received
-- [ ] Deploy Firestore security rules (`firestore.rules`) via `firebase deploy --only firestore:rules`
-- [ ] Set `PUBLIC_API_URL` env var on Cloud Run (needed for Twilio webhook signature verification)
+### Pre-Phase 4 — Can do now (no accounts needed)
+- [ ] E2E test — `flutter run --dart-define=API_BASE_URL=https://iamsafe-backend-234672413118.us-central1.run.app/api/v1`
+      → register senior → miss check-in window → confirm email arrives within 15 min
+- [ ] Deploy Firestore security rules — `firebase deploy --only firestore:rules`
+- [ ] App icon + splash screen assets (1024×1024 PNG for iOS, adaptive icon for Android)
+- [ ] Deploy latest Cloud Run fixes — `gcloud builds submit` + `gcloud run deploy`
 
 ### Phase 4 — Store submission
-- [ ] App Store Connect account + IAP products configured
-- [ ] Google Play Console account + subscriptions configured
-- [ ] RevenueCat products linked to both stores
+> ⛔ BLOCKER: Requires Apple Developer account ($99/yr) + Google Play Console ($25 one-time)
+
+#### 4a — Apple (unblocked once Apple Developer account is active)
+- [ ] Apple Developer Program enrollment — https://developer.apple.com/programs/enroll/
+- [ ] App Store Connect: create app record (bundle ID: com.iamsafe.app)
+- [ ] Create IAP products in App Store Connect:
+      - iamsafe_premium_monthly ($4.99/mo)
+      - iamsafe_premium_annual ($39.99/yr)
+      - iamsafe_family_monthly ($9.99/mo)
+      - iamsafe_family_annual ($79.99/yr)
+- [ ] TestFlight internal testing (1–2 testers)
+- [ ] App Store submission + review (typically 1–3 days)
+
+#### 4b — Google (unblocked once Play Console account is active)
+- [ ] Google Play Console enrollment — https://play.google.com/console/signup ($25 one-time)
+- [ ] Create app record (package: com.iamsafe.app)
+- [ ] Create subscription products (same 4 IDs as above)
+- [ ] Google Play internal testing track
+- [ ] Google Play submission + review (typically 1–7 days)
+
+#### 4c — RevenueCat (blocked until both store accounts exist)
+- [ ] Create RevenueCat project at app.revenuecat.com
+- [ ] Link App Store Connect + Google Play Console
+- [ ] Create entitlements: `premium`, `family`
+- [ ] Create products matching the 4 store IAP IDs
+- [ ] Configure webhook: `https://iamsafe-backend-234672413118.us-central1.run.app/api/v1/webhooks/revenuecat`
+      Authorization: Bearer 26fa5fa27d4fea2f2cdbe0f086032c9d8843be0d9aa56f2f5f74254cca1f35a7
+- [ ] Test purchase flow end-to-end (sandbox)
+
+#### 4d — Already done
 - [x] Privacy policy + terms of service pages
 - [x] App Store privacy nutrition label
-- [ ] App icon + splash screen assets
-- [ ] TestFlight beta testing
-- [ ] Google Play internal testing track
-- [ ] App Store submission + review
-- [ ] Google Play submission + review
+- [x] RevenueCat Flutter SDK integrated (`purchases_flutter`)
+- [x] PaywallScreen implemented
+- [x] RevenueCat webhook endpoint implemented + signature verified
 
 ---
 
