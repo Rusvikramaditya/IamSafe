@@ -121,8 +121,12 @@ class _SignupScreenState extends State<SignupScreen> {
                       labelText: 'Password',
                       prefixIcon: Icon(Icons.lock_outlined, size: 28),
                     ),
-                    validator: (v) =>
-                        v != null && v.length >= 6 ? null : 'Password must be 6+ characters',
+                    validator: (v) {
+                      if (v == null || v.length < 8) return 'Password must be 8+ characters';
+                      if (!RegExp(r'[A-Z]').hasMatch(v)) return 'Must contain an uppercase letter';
+                      if (!RegExp(r'[0-9]').hasMatch(v)) return 'Must contain a number';
+                      return null;
+                    },
                   ),
                 ),
 

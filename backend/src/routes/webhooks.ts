@@ -128,6 +128,7 @@ webhookRoutes.post('/twilio', webhookLimiter, async (req: Request, res: Response
       const contactsSnap = await db
         .collection('contacts')
         .where('phone', '==', From)
+        .limit(10)
         .get();
 
       for (const doc of contactsSnap.docs) {

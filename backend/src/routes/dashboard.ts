@@ -95,8 +95,11 @@ dashboardRoutes.get('/:seniorId/streak', generalLimiter, authMiddleware, async (
     }
 
     // Calculate streak using timezone-correct dates
+    // Start from yesterday if today has no check-in yet — avoids counting today prematurely
     let streak = 0;
-    let expectedDate = dayjs().tz(timezone).startOf('day');
+    const today = dayjs().tz(timezone).startOf('day');
+    const firstCheckIn = dayjs(checkInsSnap.docs[0].data().checkInDate);
+    let expectedDate = firstCheckIn.isSame(today, 'day') ? today : today.subtract(1, 'day');
 
     for (const doc of checkInsSnap.docs) {
       const data = doc.data();

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db, storage } from '../config/firebase';
 import { authMiddleware, AuthRequest } from '../middleware/authMiddleware';
-import { checkInLimiter, generalLimiter } from '../middleware/rateLimiter';
+import { checkInLimiter, generalLimiter, selfieLimiter } from '../middleware/rateLimiter';
 import { todayInTimezone, nowInTimezone } from '../config/timezone';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../lib/logger';
@@ -184,7 +184,7 @@ checkInRoutes.get('/:checkInId', generalLimiter, authMiddleware, async (req: Aut
 });
 
 // Generate selfie upload URL (separate from confirming upload)
-checkInRoutes.post('/:checkInId/selfie-url', generalLimiter, authMiddleware, async (req: AuthRequest, res) => {
+checkInRoutes.post('/:checkInId/selfie-url', selfieLimiter, authMiddleware, async (req: AuthRequest, res) => {
   try {
     const checkInId = req.params.checkInId as string;
     const doc = await db.collection('checkIns').doc(checkInId).get();
@@ -213,7 +213,7 @@ checkInRoutes.post('/:checkInId/selfie-url', generalLimiter, authMiddleware, asy
 });
 
 // Confirm selfie was uploaded — sets selfiePath on the check-in record
-checkInRoutes.post('/:checkInId/selfie-confirm', generalLimiter, authMiddleware, async (req: AuthRequest, res) => {
+checkInRoutes.post('/:checkInId/selfie-confirm', selfieLimiter, authMiddleware, async (req: AuthRequest, res) => {
   try {
     const checkInId = req.params.checkInId as string;
     const { selfiePath } = req.body;
@@ -223,22 +223,24 @@ checkInRoutes.post('/:checkInId/selfie-confirm', generalLimiter, authMiddleware,
       return;
     }
 
-    // Verify the file actually exists in storage before transacting
+    // Verify file existence + ownership + write atomically
+    // Ownership check is inside the transaction; file.exists() is done after to confirm
+    // the file is still there at commit time (guards against delete-between-check race)
     const bucket = storage.bucket();
     const file = bucket.file(selfiePath);
-    const [exists] = await file.exists();
-    if (!exists) {
-      res.status(400).json({ error: 'Selfie file not found in storage' });
-      return;
-    }
 
-    // Use transaction to atomically verify ownership + update
     await db.runTransaction(async (txn) => {
       const docRef = db.collection('checkIns').doc(checkInId);
       const doc = await txn.get(docRef);
 
       if (!doc.exists || doc.data()?.seniorId !== req.uid) {
         throw new Error('NOT_AUTHORIZED');
+      }
+
+      // Verify file still exists at transaction commit time
+      const [exists] = await file.exists();
+      if (!exists) {
+        throw new Error('FILE_NOT_FOUND');
       }
 
       txn.update(docRef, { selfiePath, hasSelfie: true });
@@ -249,6 +251,10 @@ checkInRoutes.post('/:checkInId/selfie-confirm', generalLimiter, authMiddleware,
     const msg = err instanceof Error ? err.message : String(err);
     if (msg === 'NOT_AUTHORIZED') {
       res.status(403).json({ error: 'Not authorized' });
+      return;
+    }
+    if (msg === 'FILE_NOT_FOUND') {
+      res.status(400).json({ error: 'Selfie file not found in storage' });
       return;
     }
     logger.error('Confirm selfie error', { error: String(err) });

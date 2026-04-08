@@ -24,6 +24,14 @@ export const generalLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+export const selfieLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5,
+  message: { error: 'Too many selfie upload requests. Try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 export const webhookLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 100,

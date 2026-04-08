@@ -7,6 +7,21 @@ export async function missedCheckInJob(): Promise<{ processed: number; alerts: n
   let processed = 0;
   let alertCount = 0;
 
+  // Backfill: ensure alertSentToday exists on all settings docs (handles docs created before this field)
+  const allSettingsSnap = await db.collection('seniorSettings').get();
+  const backfillBatch = db.batch();
+  let backfillCount = 0;
+  for (const doc of allSettingsSnap.docs) {
+    if (doc.data().alertSentToday === undefined) {
+      backfillBatch.update(doc.ref, { alertSentToday: false, reminderSentToday: false });
+      backfillCount++;
+    }
+  }
+  if (backfillCount > 0) {
+    await backfillBatch.commit();
+    logger.info('missedCheckInJob: backfilled alertSentToday field', { count: backfillCount });
+  }
+
   // Get all senior settings where alert hasn't been sent today
   const settingsSnap = await db
     .collection('seniorSettings')
